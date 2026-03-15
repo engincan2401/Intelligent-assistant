@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.documents import router as documents_router
 import uvicorn
+from app.api.chat import router as chat_router
 
 
 app = FastAPI(
@@ -23,6 +24,7 @@ app.add_middleware(
 )
 
 app.include_router(documents_router, prefix="/api/documents", tags=["Documents"])
+app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 
 @app.get("/api/health", tags=["System"])
 async def health_check():
