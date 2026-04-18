@@ -1,42 +1,57 @@
-import os 
-import shutil
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from app.services.document_service import process_pdf
-from app.services.vector_service import add_chunks_to_vector_db
+from app.services.document_service import process_and_store_document
+from app.models.schemas import DocumentInfo
+from app.services.vector_service import embedding_model, CHROMA_PATH
+from langchain_chroma import Chroma
 
 router = APIRouter()
 
-UPLOAD_DIR = "data/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-@router.post("/upload")
+@router.post("/upload", response_model=DocumentInfo)
 async def upload_document(file: UploadFile = File(...)):
+    
+    
     if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Моля, качете само PDF файлове.")
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
-
+        raise HTTPException(status_code=400, detail="Моля, качете PDF файл.")
+    
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        doc_info = await process_and_store_document(file)
+        return doc_info
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Грешка при запазване: {str(e)}")
-    
+        raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/list")
+async def list_documents():
+   
     try:
-        chunks = process_pdf(file_path)
-        success = add_chunks_to_vector_db(chunks)
-
-        if not success:
-            raise HTTPException(status_code=500, detail="Грешка при запис във векторната база.")
-
-        return{
-            "message": "Файлът е обработен успешно",
-            "filename": file.filename,
-            "total_pages": len(set([c.metadata.get("page") for c in chunks])),
-            "total_chunks": len(chunks),
-            "status": "ready_for_rag"
-        }
-    
+        db = Chroma(
+            persist_directory=CHROMA_PATH,
+            embedding_function=embedding_model,
+            collection_name="diploma_documents"
+        )
+        
+        result = db.get(include=["metadatas"])
+        metadatas = result.get("metadatas", [])
+        
+        
+        unique_files = set()
+        for meta in metadatas:
+            if meta and "filename" in meta:
+                unique_files.add(meta["filename"])
+        
+        return {"documents": list(unique_files)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Грешка при обработка: {str(e)}")
+        
+        return {"documents": []}
     
+@router.delete("/delete/{filename}")
+async def delete_document(filename: str):
+    try:
+        db = Chroma(
+            persist_directory=CHROMA_PATH,
+            embedding_function=embedding_model,
+            collection_name="diploma_documents"
+        )
+        db._collection.delete(where={"filename": filename})
+        return {"message": f"Документът {filename} беше изтрит успешно."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Грешка при изтриване: {str(e)}")

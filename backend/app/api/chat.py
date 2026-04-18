@@ -1,27 +1,32 @@
+from app.models.schemas import ChatRequest, FlashcardRequest, FlashcardsResponse
+from app.services.rag_service import stream_answer, generate_flashcards
 from fastapi import APIRouter, HTTPException
-from app.models.schemas import ChatRequest, ChatResponse, SourceDocument
-from app.services.rag_service import generate_answer
+from fastapi.responses import StreamingResponse
+from app.models.schemas import ChatRequest
+from app.services.rag_service import stream_answer
 
-router =APIRouter()
+router = APIRouter()
 
-@router.post("/ask", response_model=ChatResponse)
-async def ask_question(request: ChatRequest):
-
-    if not request.question.strip():
-        raise HTTPException(status_code=400, detail="Въпросът не може да бъде празен.")
+@router.post("/stream")
+async def ask_question_stream(request: ChatRequest):
     try:
-        answer, source_docs = generate_answer(request.question)
-
-        formatted_sources= [
-            SourceDocument(
-                content=doc.page_content,
-                page=doc.metadata.get("page", 0)
-            )
-            for doc in source_docs
-        ]
-
-        return ChatResponse(answer=answer, sources=formatted_sources)
-    
+        return StreamingResponse(
+            stream_answer(
+                request.question, 
+                request.chat_history, 
+                request.filename,
+                request.persona 
+            ),
+            media_type="text/plain"
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Грешка при генериране на отговор: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
     
+
+@router.post("/flashcards", response_model=FlashcardsResponse)
+async def create_flashcards(request: FlashcardRequest):
+    try:
+        cards = generate_flashcards(request.filename)
+        return FlashcardsResponse(flashcards=cards)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

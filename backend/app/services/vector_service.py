@@ -7,12 +7,14 @@ CHROMA_PATH = "data/chroma_db"
 os.makedirs(CHROMA_PATH, exist_ok=True)
 
 
-if torch.cuda.is_available():
-    device = "cuda"
-elif torch.backends.mps.is_available():
-    device = "mps"  
-else:
-    device = "cpu"  
+# if torch.cuda.is_available():
+#     device = "cuda"
+# elif torch.backends.mps.is_available():
+#     device = "mps"  
+# else:
+#     device = "cpu"  
+
+device = "cpu"
 
 print(f"Инициализиране на модела за векторизиране на устройство: {device.upper()}")
 
