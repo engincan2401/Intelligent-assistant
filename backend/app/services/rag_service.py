@@ -32,8 +32,14 @@ def stream_answer(question: str, chat_history: list, filename: str = None, perso
     history_text = ""
     if chat_history:
         for msg in chat_history:
-            role_name = "Потребител" if msg.role == "user" else "Асистент"
-            history_text += f"{role_name}: {msg.content}\n"
+            if isinstance(msg, dict):
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+            else:
+                role = msg.role
+                content = msg.content
+            role_name = "Потребител" if role == "user" else "Асистент"
+            history_text += f"{role_name}: {content}\n"
     else:
         history_text = "Няма предишни съобщения."
 

@@ -1,4 +1,6 @@
 import os
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
 import torch
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings

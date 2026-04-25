@@ -1,8 +1,11 @@
+import os 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.documents import router as documents_router
 import uvicorn
 from app.api.chat import router as chat_router
+
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
 
 app = FastAPI(

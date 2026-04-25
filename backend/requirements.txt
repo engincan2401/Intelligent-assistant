@@ -19,6 +19,7 @@ transformers<4.48.0
 
 # Vector Database
 chromadb
+posthog<6.0.0  
 
 # Document Processing
 pypdf

@@ -32,15 +32,7 @@ export const documentService = {
 };
 
 export const chatService = {
-  
-  askQuestion: async (question, chatHistory = [], filename = null) => {
-    const response = await api.post('/chat/ask', { 
-        question,
-        chat_history: chatHistory,
-        filename: filename !== 'all' ? filename : null
-    });
-    return response.data;
-  },
+  // Not used — ChatInterface uses fetch() directly for streaming via /api/chat/stream
 };
 
 

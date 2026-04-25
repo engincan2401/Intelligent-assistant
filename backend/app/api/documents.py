@@ -51,7 +51,10 @@ async def delete_document(filename: str):
             embedding_function=embedding_model,
             collection_name="diploma_documents"
         )
-        db._collection.delete(where={"filename": filename})
+        
+        
+        db.delete(where={"filename": filename})
+        
         return {"message": f"Документът {filename} беше изтрит успешно."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Грешка при изтриване: {str(e)}")

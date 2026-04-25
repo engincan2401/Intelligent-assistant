@@ -1,11 +1,10 @@
-from app.models.schemas import ChatRequest, FlashcardRequest, FlashcardsResponse
-from app.services.rag_service import stream_answer, generate_flashcards
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from app.models.schemas import ChatRequest
-from app.services.rag_service import stream_answer
+from app.models.schemas import ChatRequest, FlashcardRequest, FlashcardsResponse
+from app.services.rag_service import stream_answer, generate_flashcards
 
 router = APIRouter()
+
 
 @router.post("/stream")
 async def ask_question_stream(request: ChatRequest):

@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { documentService, flashcardService } from '../service/api';
 import FlashcardList from './FlashcardList';
 
-export default function ChatInterface() {
+export default function ChatInterface({ refreshDocs }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -55,7 +55,7 @@ export default function ChatInterface() {
 
     window.addEventListener('documentUploaded', handleNewDoc);
     return () => window.removeEventListener('documentUploaded', handleNewDoc);
-  }, []);
+  }, [refreshDocs]);
 
   const handleGenerateCards = async () => {
     setIsGeneratingCards(true);
