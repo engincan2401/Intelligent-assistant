@@ -1,24 +1,34 @@
+import os
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.document_service import process_and_store_document
 from app.models.schemas import DocumentInfo
 from app.services.vector_service import embedding_model, CHROMA_PATH
 from langchain_chroma import Chroma
 
+
 router = APIRouter()
 
-@router.post("/upload", response_model=DocumentInfo)
+@router.post("/upload")
 async def upload_document(file: UploadFile = File(...)):
-    
-    
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Моля, качете PDF файл.")
-    
-    try:
-        doc_info = await process_and_store_document(file)
-        return doc_info
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # 1. Вземаме разширението на файла
+    file_extension = os.path.splitext(file.filename)[1].lower()
+    allowed_extensions = [".pdf", ".docx", ".txt", ".csv"]
 
+    # 2. Проверяваме дали е в новия списък с позволени формати
+    if file_extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Неподдържан файлов формат ({file_extension}). Разрешени са: PDF, DOCX, TXT, CSV."
+        )
+
+    # 3. Предаваме го на нашия обновен сървис
+    try:
+        result = await process_and_store_document(file)
+        return result
+    except Exception as e:
+        # Ако гръмне при самото четене, връщаме 500 Internal Server Error
+        raise HTTPException(status_code=500, detail=str(e))
+    
 @router.get("/list")
 async def list_documents():
    
@@ -44,6 +54,7 @@ async def list_documents():
         return {"documents": []}
     
 @router.delete("/delete/{filename}")
+
 async def delete_document(filename: str):
     try:
         db = Chroma(

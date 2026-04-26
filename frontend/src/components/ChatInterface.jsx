@@ -1,26 +1,36 @@
 /* eslint-disable no-unused-vars */
 import { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2, BookOpen, BrainCircuit, Copy, Check, Trash2, Lightbulb, X, MessageSquarePlus } from 'lucide-react'; 
+import { Send, User, Bot, Loader2, BookOpen, BrainCircuit, Copy, Check, Trash2, Lightbulb, X, MessageSquarePlus, Eraser } from 'lucide-react'; 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { documentService, flashcardService } from '../service/api';
 import FlashcardList from './FlashcardList';
 
 export default function ChatInterface({ refreshDocs }) {
-  const [messages, setMessages] = useState([]);
+  // 1. ИНИЦИАЛИЗАЦИЯ ОТ LOCAL STORAGE
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem('chat_history');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [availableDocs, setAvailableDocs] = useState([]);
   const [selectedDoc, setSelectedDoc] = useState('all');
   const [persona, setPersona] = useState('default');
   
-  // Щати за Флашкарти
+  // Щати за Флашкарти и Резюме
   const [flashcards, setFlashcards] = useState([]);
   const [isGeneratingCards, setIsGeneratingCards] = useState(false);
   const [showCards, setShowCards] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  
-  // Щат за Резюме
   const [summaryData, setSummaryData] = useState({ isOpen: false, text: '', isLoading: false });
 
   const [copiedIndex, setCopiedIndex] = useState(null);
@@ -33,6 +43,11 @@ export default function ChatInterface({ refreshDocs }) {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  // 2. АВТОМАТИЧНО ЗАПАЗВАНЕ ПРИ ПРОМЯНА
+  useEffect(() => {
+    localStorage.setItem('chat_history', JSON.stringify(messages));
+  }, [messages]);
 
   useEffect(() => {
     const fetchDocs = async () => {
@@ -58,7 +73,6 @@ export default function ChatInterface({ refreshDocs }) {
     return () => window.removeEventListener('documentUploaded', handleNewDoc);
   }, [refreshDocs]);
 
-  // --- Генериране на Флашкарти ---
   const handleGenerateCards = async () => {
     setIsGeneratingCards(true);
     try {
@@ -77,7 +91,6 @@ export default function ChatInterface({ refreshDocs }) {
     }
   };
 
-  // --- Генериране на Резюме ---
   const handleGetSummary = async () => {
     if (selectedDoc === 'all') return;
     setSummaryData({ isOpen: true, text: '', isLoading: true });
@@ -114,10 +127,16 @@ export default function ChatInterface({ refreshDocs }) {
     }
   };
 
-  // Функция за изпращане на бърз въпрос (от предложенията)
+  // 3. ФУНКЦИЯ ЗА ИЗЧИСТВАНЕ НА ЧАТА
+  const handleClearChat = () => {
+    if (window.confirm("Сигурни ли сте, че искате да изчистите историята на чата?")) {
+      setMessages([]);
+      localStorage.removeItem('chat_history');
+    }
+  };
+
   const handleFollowUpClick = (question) => {
     setInput(question);
-    // Използваме setTimeout, за да дадем време на React да обнови стейта на input преди submit
     setTimeout(() => {
       const form = document.getElementById('chat-form');
       if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
@@ -161,7 +180,6 @@ export default function ChatInterface({ refreshDocs }) {
 
         fullText += decoder.decode(value, { stream: true });
 
-        // Обновяваме само текста, който е ПРЕДИ източниците
         setMessages((prev) => {
           const newMessages = [...prev];
           const lastIndex = newMessages.length - 1;
@@ -176,14 +194,12 @@ export default function ChatInterface({ refreshDocs }) {
         });
       }
 
-      // След като стриймингът приключи, парсваме JSON данните за Sources и Follow-ups
       if (fullText.includes('===SOURCES===')) {
         const parts = fullText.split('\n\n===SOURCES===\n');
         if (parts.length > 1) {
-          const extraData = parts[1]; // Съдържа sources и може би follow_ups
+          const extraData = parts[1];
           const extraParts = extraData.split('\n\n===FOLLOW_UPS===\n');
           
-          // Парсване на източници
           try {
             const parsedSources = JSON.parse(extraParts[0]);
             setMessages((prev) => {
@@ -193,7 +209,6 @@ export default function ChatInterface({ refreshDocs }) {
             });
           } catch (e) { console.error("Грешка при Sources:", e); }
 
-          // Парсване на следващи въпроси
           if (extraParts.length > 1) {
             try {
               const parsedFollowUps = JSON.parse(extraParts[1]);
@@ -228,10 +243,24 @@ export default function ChatInterface({ refreshDocs }) {
       
       {/* ХЕДЪР НА ЧАТА */}
       <div className="p-4 border-b border-gray-100 bg-gray-50 rounded-t-xl flex flex-wrap justify-between items-center gap-3">
-        <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-          <Bot className="w-5 h-5 mr-2 text-blue-600" />
-          Асистент
-        </h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-gray-800 flex items-center">
+            <Bot className="w-5 h-5 mr-2 text-blue-600" />
+            Асистент
+          </h2>
+          
+          {/* НОВ БУТОН: Изчисти чата (Появява се само ако има съобщения) */}
+          {messages.length > 0 && (
+            <button
+              onClick={handleClearChat}
+              className="text-xs flex items-center gap-1 text-gray-500 hover:text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors"
+              title="Изчисти историята на чата"
+            >
+              <Eraser className="w-3.5 h-3.5" />
+              Изчисти
+            </button>
+          )}
+        </div>
         
         <div className="flex gap-2 items-center flex-wrap">
           {/* Бутон за Флашкарти */}
@@ -239,7 +268,6 @@ export default function ChatInterface({ refreshDocs }) {
             onClick={handleGenerateCards}
             disabled={isGeneratingCards || availableDocs.length === 0}
             className="flex items-center text-sm font-medium bg-purple-100 text-purple-700 px-3 py-2 rounded-lg hover:bg-purple-200 transition-colors disabled:opacity-50"
-            title="Генерирай въпроси за учене"
           >
             {isGeneratingCards ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <BrainCircuit className="w-4 h-4 mr-1.5" />}
             <span className="hidden sm:inline">Флашкарти</span>
@@ -257,7 +285,7 @@ export default function ChatInterface({ refreshDocs }) {
             <option value="bullet_points">Само кратки списъци</option>
           </select>
 
-          {/* Избор на Документ и Инструменти към него */}
+          {/* Избор на Документ */}
           <div className="flex items-center gap-1 bg-white border border-gray-300 rounded-lg shadow-sm pr-1">
             <select 
               value={selectedDoc} 
@@ -270,22 +298,12 @@ export default function ChatInterface({ refreshDocs }) {
               ))}
             </select>
             
-            {/* Бутони Резюме и Изтриване (само ако е избран конкретен файл) */}
             {selectedDoc !== 'all' && (
               <div className="flex items-center border-l border-gray-200 pl-1">
-                <button
-                  onClick={handleGetSummary}
-                  className="p-1.5 text-blue-500 hover:bg-blue-50 hover:text-blue-700 rounded-md transition-colors"
-                  title="Генерирай AI Резюме на документа"
-                >
+                <button onClick={handleGetSummary} className="p-1.5 text-blue-500 hover:bg-blue-50 hover:text-blue-700 rounded-md transition-colors" title="AI Резюме">
                   <Lightbulb className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={handleDeleteDocument}
-                  disabled={isDeleting}
-                  className="p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-md transition-colors disabled:opacity-50"
-                  title="Изтрий избрания документ"
-                >
+                <button onClick={handleDeleteDocument} disabled={isDeleting} className="p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-md transition-colors disabled:opacity-50" title="Изтрий">
                   {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                 </button>
               </div>
@@ -294,15 +312,14 @@ export default function ChatInterface({ refreshDocs }) {
         </div>
       </div>
 
-      {/* МОДАЛИ (Флашкарти и Резюме) */}
+      {/* ... МОДАЛИ ЗА ФЛАШКАРТИ И РЕЗЮМЕ ... */}
       {showCards && <FlashcardList cards={flashcards} onClose={() => setShowCards(false)} />}
       
       {summaryData.isOpen && (
         <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-50 flex flex-col rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
           <div className="p-4 border-b flex justify-between items-center bg-blue-50/50">
             <h3 className="font-bold text-gray-800 flex items-center gap-2">
-              <Lightbulb className="w-5 h-5 text-blue-600" /> 
-              Резюме: {selectedDoc}
+              <Lightbulb className="w-5 h-5 text-blue-600" /> Резюме: {selectedDoc}
             </h3>
             <button onClick={() => setSummaryData({ ...summaryData, isOpen: false })} className="p-1 hover:bg-gray-200 rounded-full transition-colors">
               <X className="w-5 h-5 text-gray-500" />
@@ -348,7 +365,6 @@ export default function ChatInterface({ refreshDocs }) {
                   <div className="text-red-600 whitespace-pre-wrap font-medium">{msg.content}</div>
                 ) : (
                   <div className="text-sm md:text-base text-gray-700 relative">
-                    {/* Markdown Парсер */}
                     <ReactMarkdown 
                       remarkPlugins={[remarkGfm]}
                       components={{
@@ -373,7 +389,6 @@ export default function ChatInterface({ refreshDocs }) {
                       {msg.content}
                     </ReactMarkdown>
 
-                    {/* Бутон за Копиране */}
                     <div className="mt-3 pt-2 flex justify-end">
                       <button
                         onClick={() => handleCopy(msg.content, index)}
@@ -385,7 +400,6 @@ export default function ChatInterface({ refreshDocs }) {
                   </div>
                 )}
                 
-                {/* ИЗТОЧНИЦИ (Sources) */}
                 {msg.sources && msg.sources.length > 0 && !msg.isError && (
                   <div className="mt-4 pt-3 border-t border-gray-200">
                     <p className="text-xs font-semibold flex items-center mb-2 text-gray-600">
@@ -402,7 +416,6 @@ export default function ChatInterface({ refreshDocs }) {
                   </div>
                 )}
 
-               
                 {msg.followUps && msg.followUps.length > 0 && !isLoading && index === messages.length - 1 && (
                   <div className="mt-4 pt-3 border-t border-gray-200">
                     <p className="text-xs font-semibold flex items-center mb-2 text-gray-500 uppercase tracking-wider">
