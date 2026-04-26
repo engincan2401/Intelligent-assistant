@@ -58,3 +58,12 @@ async def delete_document(filename: str):
         return {"message": f"Документът {filename} беше изтрит успешно."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Грешка при изтриване: {str(e)}")
+    
+@router.get("/summary/{filename}")
+async def get_summary(filename: str):
+    from app.services.rag_service import generate_document_summary
+    try:
+        summary = generate_document_summary(filename)
+        return {"summary": summary}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Грешка при резюмиране: {str(e)}")

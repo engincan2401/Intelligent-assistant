@@ -28,7 +28,11 @@ export const documentService = {
   deleteDocument: async (filename) => {
     const response = await api.delete(`/documents/delete/${filename}`);
     return response.data;
-  }
+  },
+  getSummary: async (filename) => {
+    const response = await api.get(`/documents/summary/${filename}`);
+    return response.data.summary;
+  },
 };
 
 export const chatService = {
