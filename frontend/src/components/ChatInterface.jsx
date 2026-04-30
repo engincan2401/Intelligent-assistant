@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 import { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2, BookOpen, BrainCircuit, Copy, Check, Trash2, Lightbulb, X, MessageSquarePlus, Eraser, ListTodo } from 'lucide-react';
+import { flushSync } from 'react-dom'; // Добавено за стрийминга
+import { Send, User, Bot, Loader2, BookOpen, BrainCircuit, Copy, Check, Trash2, Lightbulb, X, MessageSquarePlus, Eraser, ListTodo, Mic, MicOff, Volume2, Square } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { documentService, flashcardService, quizService } from '../service/api';
@@ -12,30 +13,38 @@ export default function ChatInterface({ refreshDocs }) {
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('chat_history');
     if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return [];
-      }
+      try { return JSON.parse(saved); } catch (e) { return []; }
     }
     return [];
   });
+
+  // НОВ ЩАТ: За съобщението, което се стриймва в реално време
+  const [streamingMessage, setStreamingMessage] = useState(null);
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [availableDocs, setAvailableDocs] = useState([]);
   const [selectedDoc, setSelectedDoc] = useState('all');
   const [persona, setPersona] = useState('default');
+  
   const [flashcards, setFlashcards] = useState([]);
   const [isGeneratingCards, setIsGeneratingCards] = useState(false);
   const [showCards, setShowCards] = useState(false);
+  
   const [quizData, setQuizData] = useState([]);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [showQuiz, setShowQuiz] = useState(false);
+  
   const [isDeleting, setIsDeleting] = useState(false);
   const [summaryData, setSummaryData] = useState({ isOpen: false, text: '', isLoading: false });
 
   const [copiedIndex, setCopiedIndex] = useState(null);
+  
+  // --- ЩАТИ ЗА ГЛАС ---
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const recognitionRef = useRef(null);
+
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -44,13 +53,82 @@ export default function ChatInterface({ refreshDocs }) {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading]);
+  }, [messages, isLoading, streamingMessage]);
 
   // 2. АВТОМАТИЧНО ЗАПАЗВАНЕ ПРИ ПРОМЯНА
   useEffect(() => {
     localStorage.setItem('chat_history', JSON.stringify(messages));
   }, [messages]);
 
+  // --- ИНИЦИАЛИЗАЦИЯ НА МИКРОФОНА (Speech-to-Text) ---
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'bg-BG'; // Настроено за български
+
+      recognitionRef.current.onresult = (event) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        setInput(transcript);
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error("Грешка при разпознаване на речта:", event.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    }
+
+    return () => {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    };
+  }, []);
+
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      setInput(''); 
+      recognitionRef.current?.start();
+      setIsListening(true);
+    }
+  };
+
+  // --- ЧЕТЕНЕ НА ГЛАС (Text-to-Speech) ---
+  const handleSpeak = (text) => {
+    if (!('speechSynthesis' in window)) {
+      alert("Браузърът ви не поддържа четене на глас.");
+      return;
+    }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    const cleanText = text.replace(/[*#`_]/g, '');
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = 'bg-BG';
+    utterance.rate = 1.0;
+    
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    setIsSpeaking(true);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // --- ИЗТЕГЛЯНЕ НА ДОКУМЕНТИ ---
   useEffect(() => {
     const fetchDocs = async () => {
       try {
@@ -147,7 +225,6 @@ export default function ChatInterface({ refreshDocs }) {
     }
   };
 
-  // 3. ФУНКЦИЯ ЗА ИЗЧИСТВАНЕ НА ЧАТА
   const handleClearChat = () => {
     if (window.confirm("Сигурни ли сте, че искате да изчистите историята на чата?")) {
       setMessages([]);
@@ -167,12 +244,17 @@ export default function ChatInterface({ refreshDocs }) {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    }
+
     const userMessage = input.trim();
     setInput('');
     setIsLoading(true);
 
     setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
-    setMessages((prev) => [...prev, { role: 'assistant', content: '', sources: [], followUps: [] }]);
+    setStreamingMessage({ role: 'assistant', content: '', sources: [], followUps: [] });
 
     try {
       const historyToPass = messages.map((msg) => ({ role: msg.role, content: msg.content }));
@@ -200,62 +282,88 @@ export default function ChatInterface({ refreshDocs }) {
 
         fullText += decoder.decode(value, { stream: true });
 
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          const lastIndex = newMessages.length - 1;
-          const sourceIndex = fullText.indexOf('\n\n===SOURCES===');
-          
-          if (sourceIndex !== -1) {
-            newMessages[lastIndex].content = fullText.substring(0, sourceIndex);
-          } else {
-            newMessages[lastIndex].content = fullText;
-          }
-          return newMessages;
+        let displayContent = fullText;
+        const sourceIndex = fullText.indexOf('\n\n===SOURCES===');
+        if (sourceIndex !== -1) {
+          displayContent = fullText.substring(0, sourceIndex);
+        }
+
+        flushSync(() => {
+          setStreamingMessage((prev) => ({
+            ...prev,
+            content: displayContent
+          }));
         });
       }
 
-      if (fullText.includes('===SOURCES===')) {
+      let parsedSources = [];
+      let parsedFollowUps = [];
+
+      if (fullText.includes('\n\n===SOURCES===\n')) {
         const parts = fullText.split('\n\n===SOURCES===\n');
         if (parts.length > 1) {
           const extraData = parts[1];
           const extraParts = extraData.split('\n\n===FOLLOW_UPS===\n');
           
           try {
-            const parsedSources = JSON.parse(extraParts[0]);
-            setMessages((prev) => {
-              const newMsgs = [...prev];
-              newMsgs[newMsgs.length - 1].sources = parsedSources;
-              return newMsgs;
-            });
+            parsedSources = JSON.parse(extraParts[0]);
           } catch (e) { console.error("Грешка при Sources:", e); }
 
           if (extraParts.length > 1) {
             try {
-              const parsedFollowUps = JSON.parse(extraParts[1]);
-              setMessages((prev) => {
-                const newMsgs = [...prev];
-                newMsgs[newMsgs.length - 1].followUps = parsedFollowUps;
-                return newMsgs;
-              });
+              parsedFollowUps = JSON.parse(extraParts[1]);
             } catch (e) { console.error("Грешка при Follow-ups:", e); }
           }
         }
       }
 
+      const finalContent = fullText.includes('\n\n===SOURCES===') 
+        ? fullText.substring(0, fullText.indexOf('\n\n===SOURCES===')) 
+        : fullText;
+
+      setMessages((prev) => [...prev, { 
+        role: 'assistant', 
+        content: finalContent, 
+        sources: parsedSources, 
+        followUps: parsedFollowUps 
+      }]);
+      
+      setStreamingMessage(null);
+
     } catch (error) {
       console.error('Streaming error:', error);
-      setMessages((prev) => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1] = {
+      setMessages((prev) => [
+        ...prev, 
+        {
           role: 'assistant',
           content: `⚠️ Проблем с връзката: ${error.message}.`,
           isError: true,
-        };
-        return newMessages;
-      });
+        }
+      ]);
+      setStreamingMessage(null);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Конфигурация за ReactMarkdown
+  const markdownComponents = {
+    p: ({node, ...props}) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
+    ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1" {...props} />,
+    ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1" {...props} />,
+    li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
+    h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-3 mt-4 text-gray-900" {...props} />,
+    h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-3 mt-4 text-gray-900" {...props} />,
+    h3: ({node, ...props}) => <h3 className="text-base font-bold mb-2 mt-3 text-gray-900" {...props} />,
+    a: ({node, ...props}) => <a className="text-blue-600 hover:underline font-medium" target="_blank" rel="noopener noreferrer" {...props} />,
+    code: ({node, inline, children, ...props}) => inline 
+      ? <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded-md font-mono text-[13px] border border-gray-200" {...props}>{children}</code>
+      : <div className="relative my-4 bg-[#1e1e1e] rounded-lg overflow-hidden border border-gray-800"><pre className="p-4 overflow-x-auto text-[13px] text-gray-50 font-mono leading-relaxed"><code {...props}>{children}</code></pre></div>,
+    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-400 pl-4 py-1 italic text-gray-500 my-4 bg-blue-50/50 rounded-r-lg" {...props} />,
+    strong: ({node, ...props}) => <strong className="font-semibold text-gray-900" {...props} />,
+    table: ({node, ...props}) => <div className="overflow-x-auto mb-4"><table className="min-w-full divide-y divide-gray-300 border border-gray-200 rounded-lg" {...props} /></div>,
+    th: ({node, ...props}) => <th className="bg-gray-50 px-3 py-2 text-left text-sm font-semibold text-gray-900 border-b border-gray-200" {...props} />,
+    td: ({node, ...props}) => <td className="px-3 py-2 text-sm text-gray-600 border-b border-gray-200" {...props} />
   };
 
   return (
@@ -269,7 +377,6 @@ export default function ChatInterface({ refreshDocs }) {
             Асистент
           </h2>
           
-          {/* НОВ БУТОН: Изчисти чата (Появява се само ако има съобщения) */}
           {messages.length > 0 && (
             <button
               onClick={handleClearChat}
@@ -291,7 +398,6 @@ export default function ChatInterface({ refreshDocs }) {
               {isGeneratingQuiz ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <ListTodo className="w-4 h-4 mr-1.5" />}
               <span className="hidden sm:inline">Тест</span>
             </button>
-          {/* Бутон за Флашкарти */}
           <button
             onClick={handleGenerateCards}
             disabled={isGeneratingCards || availableDocs.length === 0}
@@ -301,7 +407,6 @@ export default function ChatInterface({ refreshDocs }) {
             <span className="hidden sm:inline">Флашкарти</span>
           </button>
 
-          {/* Избор на Персона */}
           <select 
             value={persona} 
             onChange={(e) => setPersona(e.target.value)}
@@ -313,7 +418,6 @@ export default function ChatInterface({ refreshDocs }) {
             <option value="bullet_points">Само кратки списъци</option>
           </select>
 
-          {/* Избор на Документ */}
           <div className="flex items-center gap-1 bg-white border border-gray-300 rounded-lg shadow-sm pr-1">
             <select 
               value={selectedDoc} 
@@ -340,7 +444,6 @@ export default function ChatInterface({ refreshDocs }) {
         </div>
       </div>
 
-      {/* ... МОДАЛИ ЗА ФЛАШКАРТИ И РЕЗЮМЕ ... */}
       {showCards && <FlashcardList cards={flashcards} onClose={() => setShowCards(false)} />}
       {showQuiz && <QuizInterface questions={quizData} onClose={() => setShowQuiz(false)} />}
       
@@ -371,104 +474,117 @@ export default function ChatInterface({ refreshDocs }) {
 
       {/* ЗОНА ЗА СЪОБЩЕНИЯ */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {messages.length === 0 ? (
+        {messages.length === 0 && !streamingMessage ? (
           <div className="h-full flex flex-col items-center justify-center text-gray-400">
             <Bot className="w-12 h-12 mb-3 opacity-20" />
             <p>Задайте въпрос относно качените документи.</p>
           </div>
         ) : (
-          messages.map((msg, index) => (
-            <div key={index} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-              <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                msg.role === 'user' ? 'bg-blue-100 text-blue-600' : 
-                msg.isError ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'
-              }`}>
-                {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
-              </div>
+          <>
+            {messages.map((msg, index) => (
+              <div key={index} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                  msg.role === 'user' ? 'bg-blue-100 text-blue-600' : 
+                  msg.isError ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'
+                }`}>
+                  {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
+                </div>
 
-              <div className={`max-w-[80%] overflow-x-auto ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-none shadow-sm'} p-4`}>
-                
-                {msg.role === 'user' ? (
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
-                ) : msg.isError ? (
-                  <div className="text-red-600 whitespace-pre-wrap font-medium">{msg.content}</div>
-                ) : (
+                <div className={`max-w-[80%] overflow-x-auto ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-none shadow-sm'} p-4`}>
+                  
+                  {msg.role === 'user' ? (
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                  ) : msg.isError ? (
+                    <div className="text-red-600 whitespace-pre-wrap font-medium">{msg.content}</div>
+                  ) : (
+                    <div className="text-sm md:text-base text-gray-700 relative">
+                      <ReactMarkdown 
+                        remarkPlugins={[remarkGfm]}
+                        components={markdownComponents}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+
+                      {/* Бутони за Копиране и Четене */}
+                      <div className="mt-3 pt-2 flex justify-end gap-2">
+                        <button
+                          onClick={() => handleSpeak(msg.content)}
+                          className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 hover:bg-blue-100 px-2 py-1.5 rounded-md border border-blue-100"
+                        >
+                          {isSpeaking ? <><Square className="w-3.5 h-3.5 mr-1.5 fill-current" /> Спри</> : <><Volume2 className="w-3.5 h-3.5 mr-1.5" /> Прочети</>}
+                        </button>
+                        <button
+                          onClick={() => handleCopy(msg.content, index)}
+                          className="flex items-center text-xs text-gray-500 hover:text-gray-800 transition-colors bg-gray-50 hover:bg-gray-100 px-2 py-1.5 rounded-md border border-gray-100"
+                        >
+                          {copiedIndex === index ? <><Check className="w-3.5 h-3.5 mr-1.5 text-green-600" /><span className="text-green-600 font-medium">Копирано</span></> : <><Copy className="w-3.5 h-3.5 mr-1.5" />Копирай</>}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {msg.sources && msg.sources.length > 0 && !msg.isError && (
+                    <div className="mt-4 pt-3 border-t border-gray-200">
+                      <p className="text-xs font-semibold flex items-center mb-2 text-gray-600">
+                        <BookOpen className="w-3 h-3 mr-1" /> Източници:
+                      </p>
+                      <div className="space-y-2">
+                        {msg.sources.map((source, idx) => (
+                          <div key={idx} className="bg-gray-50 p-2 rounded text-xs text-gray-600 border border-gray-200">
+                            <span className="font-semibold text-gray-700 block mb-1">Страница {source.page}</span>
+                            <p className="line-clamp-3 italic">"{source.content}"</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {msg.followUps && msg.followUps.length > 0 && !isLoading && index === messages.length - 1 && (
+                    <div className="mt-4 pt-3 border-t border-gray-200">
+                      <p className="text-xs font-semibold flex items-center mb-2 text-gray-500 uppercase tracking-wider">
+                        <MessageSquarePlus className="w-3 h-3 mr-1" /> Може би искате да попитате:
+                      </p>
+                      <div className="flex flex-col gap-1.5">
+                        {msg.followUps.map((q, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleFollowUpClick(q)}
+                            className="text-left text-xs px-3 py-2 bg-blue-50/50 border border-blue-100 text-blue-700 hover:bg-blue-100 hover:border-blue-200 transition-all rounded-lg font-medium"
+                          >
+                            {q}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* СЪОБЩЕНИЕ В РЕАЛНО ВРЕМЕ */}
+            {streamingMessage && (
+              <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-green-100 text-green-600">
+                  <Bot className="w-5 h-5" />
+                </div>
+
+                <div className="max-w-[80%] overflow-x-auto bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-none shadow-sm p-4">
                   <div className="text-sm md:text-base text-gray-700 relative">
                     <ReactMarkdown 
                       remarkPlugins={[remarkGfm]}
-                      components={{
-                        p: ({node, ...props}) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
-                        ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1" {...props} />,
-                        ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1" {...props} />,
-                        li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
-                        h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-3 mt-4 text-gray-900" {...props} />,
-                        h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-3 mt-4 text-gray-900" {...props} />,
-                        h3: ({node, ...props}) => <h3 className="text-base font-bold mb-2 mt-3 text-gray-900" {...props} />,
-                        a: ({node, ...props}) => <a className="text-blue-600 hover:underline font-medium" target="_blank" rel="noopener noreferrer" {...props} />,
-                        code: ({node, inline, children, ...props}) => inline 
-                          ? <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded-md font-mono text-[13px] border border-gray-200" {...props}>{children}</code>
-                          : <div className="relative my-4 bg-[#1e1e1e] rounded-lg overflow-hidden border border-gray-800"><pre className="p-4 overflow-x-auto text-[13px] text-gray-50 font-mono leading-relaxed"><code {...props}>{children}</code></pre></div>,
-                        blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-400 pl-4 py-1 italic text-gray-500 my-4 bg-blue-50/50 rounded-r-lg" {...props} />,
-                        strong: ({node, ...props}) => <strong className="font-semibold text-gray-900" {...props} />,
-                        table: ({node, ...props}) => <div className="overflow-x-auto mb-4"><table className="min-w-full divide-y divide-gray-300 border border-gray-200 rounded-lg" {...props} /></div>,
-                        th: ({node, ...props}) => <th className="bg-gray-50 px-3 py-2 text-left text-sm font-semibold text-gray-900 border-b border-gray-200" {...props} />,
-                        td: ({node, ...props}) => <td className="px-3 py-2 text-sm text-gray-600 border-b border-gray-200" {...props} />
-                      }}
+                      components={markdownComponents}
                     >
-                      {msg.content}
+                      {streamingMessage.content}
                     </ReactMarkdown>
-
-                    <div className="mt-3 pt-2 flex justify-end">
-                      <button
-                        onClick={() => handleCopy(msg.content, index)}
-                        className="flex items-center text-xs text-gray-500 hover:text-gray-800 transition-colors bg-gray-50 hover:bg-gray-100 px-2 py-1.5 rounded-md border border-gray-100"
-                      >
-                        {copiedIndex === index ? <><Check className="w-3.5 h-3.5 mr-1.5 text-green-600" /><span className="text-green-600 font-medium">Копирано</span></> : <><Copy className="w-3.5 h-3.5 mr-1.5" />Копирай</>}
-                      </button>
-                    </div>
+                    <span className="inline-block w-1.5 h-4 ml-1 bg-blue-500 animate-pulse"></span>
                   </div>
-                )}
-                
-                {msg.sources && msg.sources.length > 0 && !msg.isError && (
-                  <div className="mt-4 pt-3 border-t border-gray-200">
-                    <p className="text-xs font-semibold flex items-center mb-2 text-gray-600">
-                      <BookOpen className="w-3 h-3 mr-1" /> Източници:
-                    </p>
-                    <div className="space-y-2">
-                      {msg.sources.map((source, idx) => (
-                        <div key={idx} className="bg-gray-50 p-2 rounded text-xs text-gray-600 border border-gray-200">
-                          <span className="font-semibold text-gray-700 block mb-1">Страница {source.page}</span>
-                          <p className="line-clamp-3 italic">"{source.content}"</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {msg.followUps && msg.followUps.length > 0 && !isLoading && index === messages.length - 1 && (
-                  <div className="mt-4 pt-3 border-t border-gray-200">
-                    <p className="text-xs font-semibold flex items-center mb-2 text-gray-500 uppercase tracking-wider">
-                      <MessageSquarePlus className="w-3 h-3 mr-1" /> Може би искате да попитате:
-                    </p>
-                    <div className="flex flex-col gap-1.5">
-                      {msg.followUps.map((q, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleFollowUpClick(q)}
-                          className="text-left text-xs px-3 py-2 bg-blue-50/50 border border-blue-100 text-blue-700 hover:bg-blue-100 hover:border-blue-200 transition-all rounded-lg font-medium"
-                        >
-                          {q}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
-            </div>
-          ))
+            )}
+          </>
         )}
         
-        {isLoading && (
+        {isLoading && !streamingMessage && (
           <div className="flex gap-4">
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
               <Bot className="w-5 h-5" />
@@ -482,14 +598,25 @@ export default function ChatInterface({ refreshDocs }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* ФОРМА ЗА ПИСАНЕ */}
       <form id="chat-form" onSubmit={handleSubmit} className="p-4 bg-white border-t border-gray-100 rounded-b-xl z-10">
         <div className="flex items-center gap-2">
+          
+          <button
+            type="button"
+            onClick={toggleListening}
+            className={`p-3 rounded-lg flex-shrink-0 transition-colors ${
+              isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title={isListening ? 'Спри микрофона' : 'Говори'}
+          >
+            {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+          </button>
+
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Попитайте нещо..."
+            placeholder={isListening ? "Слушам ви..." : "Попитайте нещо..."}
             disabled={isLoading}
             className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-50"
           />

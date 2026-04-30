@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from app.models.schemas import ChatRequest, FlashcardRequest, FlashcardsResponse, QuizRequest, QuizResponse
 from app.services.rag_service import stream_answer, generate_flashcards, generate_quiz
-import traceback
 
 router = APIRouter()
 
@@ -34,16 +33,23 @@ async def create_flashcards(request: FlashcardRequest):
 @router.post("/quiz", response_model=QuizResponse)
 async def create_quiz(request: QuizRequest):
     try:
-        questions = generate_quiz(request.filename, request.num_questions)
         
-        # Проверка дали моделът не е върнал празен масив
-        if not questions:
-            raise ValueError("Моделът върна празен списък или не можа да генерира JSON.")
-            
-        return QuizResponse(questions=questions)
+        questions = generate_quiz(request.filename) 
+
+        cleaned_questions = []
+        
+        
+        for q in questions:
+            if "options" in q and isinstance(q["options"], list):
+                
+                q["options"] = valid_options[:4] 
+                
+            cleaned_questions.append(q)
+
+        
+        return QuizResponse(questions=cleaned_questions)
+
+
     except Exception as e:
-        print("\n" + "="*50)
-        print("🚨 КРИТИЧНА ГРЕШКА ПРИ ГЕНЕРИРАНЕ НА ТЕСТ:")
-        traceback.print_exc() # Това ще отпечата ТОЧНИЯ проблем в терминала!
-        print("="*50 + "\n")
+        
         raise HTTPException(status_code=500, detail=str(e))
