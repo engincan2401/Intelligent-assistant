@@ -1,10 +1,11 @@
 /* eslint-disable no-unused-vars */
 import { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2, BookOpen, BrainCircuit, Copy, Check, Trash2, Lightbulb, X, MessageSquarePlus, Eraser } from 'lucide-react'; 
+import { Send, User, Bot, Loader2, BookOpen, BrainCircuit, Copy, Check, Trash2, Lightbulb, X, MessageSquarePlus, Eraser, ListTodo } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { documentService, flashcardService } from '../service/api';
+import { documentService, flashcardService, quizService } from '../service/api';
 import FlashcardList from './FlashcardList';
+import QuizInterface from './QuizInterface';
 
 export default function ChatInterface({ refreshDocs }) {
   // 1. ИНИЦИАЛИЗАЦИЯ ОТ LOCAL STORAGE
@@ -25,11 +26,12 @@ export default function ChatInterface({ refreshDocs }) {
   const [availableDocs, setAvailableDocs] = useState([]);
   const [selectedDoc, setSelectedDoc] = useState('all');
   const [persona, setPersona] = useState('default');
-  
-  // Щати за Флашкарти и Резюме
   const [flashcards, setFlashcards] = useState([]);
   const [isGeneratingCards, setIsGeneratingCards] = useState(false);
   const [showCards, setShowCards] = useState(false);
+  const [quizData, setQuizData] = useState([]);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const [showQuiz, setShowQuiz] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [summaryData, setSummaryData] = useState({ isOpen: false, text: '', isLoading: false });
 
@@ -88,6 +90,24 @@ export default function ChatInterface({ refreshDocs }) {
       alert("Възникна грешка при свързването със сървъра.");
     } finally {
       setIsGeneratingCards(false);
+    }
+  };
+
+  const handleGenerateQuiz = async () => {
+    setIsGeneratingQuiz(true);
+    try {
+      const questions = await quizService.generateQuiz(selectedDoc);
+      if (questions && questions.length > 0) {
+        setQuizData(questions);
+        setShowQuiz(true);
+      } else {
+        alert("Не успяхме да генерираме тест. Опитай отново.");
+      }
+    } catch (error) {
+      console.error("Грешка при генериране на тест:", error);
+      alert("Възникна грешка при свързването със сървъра.");
+    } finally {
+      setIsGeneratingQuiz(false);
     }
   };
 
@@ -263,6 +283,14 @@ export default function ChatInterface({ refreshDocs }) {
         </div>
         
         <div className="flex gap-2 items-center flex-wrap">
+          <button
+              onClick={handleGenerateQuiz}
+              disabled={isGeneratingQuiz || availableDocs.length === 0}
+              className="flex items-center text-sm font-medium bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg hover:bg-indigo-200 transition-colors disabled:opacity-50"
+            >
+              {isGeneratingQuiz ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <ListTodo className="w-4 h-4 mr-1.5" />}
+              <span className="hidden sm:inline">Тест</span>
+            </button>
           {/* Бутон за Флашкарти */}
           <button
             onClick={handleGenerateCards}
@@ -314,6 +342,7 @@ export default function ChatInterface({ refreshDocs }) {
 
       {/* ... МОДАЛИ ЗА ФЛАШКАРТИ И РЕЗЮМЕ ... */}
       {showCards && <FlashcardList cards={flashcards} onClose={() => setShowCards(false)} />}
+      {showQuiz && <QuizInterface questions={quizData} onClose={() => setShowQuiz(false)} />}
       
       {summaryData.isOpen && (
         <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-50 flex flex-col rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">

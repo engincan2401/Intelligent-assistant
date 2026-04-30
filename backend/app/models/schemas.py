@@ -1,6 +1,22 @@
 from pydantic import BaseModel
 from typing import List, Optional
 
+class QuizOption(BaseModel):
+    text: str
+    is_correct: bool
+
+class QuizQuestion(BaseModel):
+    question: str
+    options: List[QuizOption]
+    explanation: str
+
+class QuizRequest(BaseModel):
+    filename: str
+    num_questions: int = 5
+
+class QuizResponse(BaseModel):
+    questions: List[QuizQuestion]
+
 
 class Message(BaseModel):
     role: str

@@ -48,3 +48,13 @@ export const flashcardService = {
     return response.data.flashcards;
   }
 };
+
+export const quizService = {
+  generateQuiz: async (filename, numQuestions = 5) => {
+    const response = await api.post('/chat/quiz', {
+      filename: filename,
+      num_questions: numQuestions
+    });
+    return response.data.questions;
+  }
+};

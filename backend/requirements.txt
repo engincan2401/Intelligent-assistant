@@ -1,28 +1,32 @@
 # Web Framework
-fastapi
-uvicorn[standard]
-python-multipart
-pydantic
+fastapi==0.136.0
+uvicorn[standard]==0.44.0
+python-multipart==0.0.22
+pydantic==2.13.2
 
 # LangChain & AI
-langchain
-langchain-community
-langchain-chroma
-langchain-huggingface
-langchain-text-splitters
-langchain-ollama
+langchain==1.2.15
+langchain-community==0.4.1
+langchain-chroma==1.1.0
+langchain-huggingface==1.2.2
+langchain-ollama==1.1.0
+langchain-openai==1.1.14
+langchain-text-splitters==1.1.2
 
-# Embeddings & HuggingFace 
-sentence-transformers
-safetensors
-transformers<4.48.0
+# Embeddings & HuggingFace
+sentence-transformers==5.4.1
+transformers==4.47.1
+torch==2.11.0+cpu
 
 # Vector Database
-chromadb
-posthog<6.0.0  
+chromadb==1.5.8
+posthog==5.4.0
 
 # Document Processing
-pypdf
+pypdf==6.9.2
+docx2txt==0.9
+rank-bm25==0.2.2
 
 # Utils
-python-dotenv
+python-dotenv==1.2.2
+httpx==0.28.1
