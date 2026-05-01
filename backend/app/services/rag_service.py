@@ -2,6 +2,7 @@ import json
 import re
 from langchain_ollama import ChatOllama
 from langchain_chroma import Chroma
+from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
@@ -10,6 +11,21 @@ from app.services.vector_service import embedding_model, CHROMA_PATH
 llm = ChatOllama(model="llama3", temperature=0.1)
 
 bm25_cache = {}
+
+_global_db = None
+
+def get_db():
+    """Връща инстанция на ChromaDB. Ако не е заредена, я зарежда само веднъж."""
+    global _global_db
+    if _global_db is None:
+        print("⏳ Първоначално зареждане на векторната база (ChromaDB)...")
+        _global_db = Chroma(
+            persist_directory=CHROMA_PATH,
+            embedding_function=embedding_model,
+            collection_name="diploma_documents"
+        )
+        print("✅ Базата е заредена успешно!")
+    return _global_db
 
 def custom_hybrid_search(question: str, db, filename: str = None, k: int = 4):
     """Комбинира векторно търсене (Chroma) и ключови думи (BM25) с кеширане."""
@@ -78,15 +94,58 @@ def generate_followups(question: str, answer: str):
         print("Грешка при генериране на follow-ups:", e)
         return []
 
-def stream_answer(question: str, chat_history: list, filename: str = None, persona: str = "default"):
-    db = Chroma(
-        persist_directory=CHROMA_PATH,
-        embedding_function=embedding_model,
-        collection_name="diploma_documents"
-    )
+PERSONA_PROMPTS = {
+    "default": """Ти си полезен AI асистент. 
+ВАЖНО: ОТГОВАРЯЙ ВИНАГИ И ЕДИНСТВЕНО НА БЪЛГАРСКИ ЕЗИК (Bulgarian)!
+Използвай следния контекст, за да отговориш на въпроса. Ако не знаеш отговора, кажи, че не знаеш.
+
+Контекст: {context}
+История: {history}
+Въпрос: {question}
+
+Отговор на български език:""",
+
+    "simple": """Ти си много дружелюбен учител, който обяснява сложни концепции на 10-годишно дете. 
+ВАЖНО: ОТГОВАРЯЙ ВИНАГИ И ЕДИНСТВЕНО НА БЪЛГАРСКИ ЕЗИК (Bulgarian)!
+Използвай изключително прости думи, давай примери от ежедневието (игри, животни, училище) и бъди забавен.
+
+Контекст: {context}
+История: {history}
+Въпрос: {question}
+
+Отговор на български език:""",
+
+    "expert": """Ти си академичен професор и експерт в областта. 
+ВАЖНО: ОТГОВАРЯЙ ВИНАГИ И ЕДИНСТВЕНО НА БЪЛГАРСКИ ЕЗИК (Bulgarian)!
+Давай изчерпателни, научно издържани, обективни и строго формални отговори. Използвай специализирана терминология.
+
+Контекст: {context}
+История: {history}
+Въпрос: {question}
+
+Експертен отговор на български език:""",
+
+    "bullet_points": """Ти си AI асистент. 
+ВАЖНО: ОТГОВАРЯЙ ВИНАГИ И ЕДИНСТВЕНО НА БЪЛГАРСКИ ЕЗИК (Bulgarian)!
+Твоята задача е да отговаряш ИЗКЛЮЧИТЕЛНО И САМО под формата на кратки списъци (bullet points). Никакъв излишен текст преди или след списъка. Всяка точка трябва да е кратка и ясна.
+
+Контекст: {context}
+История: {history}
+Въпрос: {question}
+
+Списък на български език:"""
+}
+
+# 2. ОБНОВЕНАТА ФУНКЦИЯ ЗА СТРИЙМИНГ
+async def stream_answer(question: str, chat_history: list, filename: str = None, persona: str = "default"):
+    # ВЗЕМАМЕ БАЗАТА (вече е супер бързо, защото е заредена в паметта!)
+    db = get_db()
+
+    # Търсене на релевантни документи (вашата логика за хибридно търсене)
     docs = custom_hybrid_search(question, db, filename, k=4)
     context_text = "\n\n---\n\n".join([doc.page_content for doc in docs])
-    
+
+    # Форматиране на историята
     history_text = ""
     if chat_history:
         for msg in chat_history:
@@ -94,46 +153,27 @@ def stream_answer(question: str, chat_history: list, filename: str = None, perso
             content = msg.content if hasattr(msg, 'content') else msg.get('content', '')
             role_name = "Потребител" if role == "user" else "Асистент"
             history_text += f"{role_name}: {content}\n"
-    else:
-        history_text = "Няма предишна история."
 
-    # ДОБАВЕНО И ПОДОБРЕНО: Мапинг на персоните с изрична инструкция за БЪЛГАРСКИ ЕЗИК
-    persona_instructions = {
-        "default": "Отговаряй естествено, професионално и подробно. ЗАДЪЛЖИТЕЛНО пиши на БЪЛГАРСКИ ЕЗИК (Bulgarian).",
-        "simple": "Обясни го като на 10-годишно дете, използвайки много прости думи и примери. ЗАДЪЛЖИТЕЛНО пиши на БЪЛГАРСКИ ЕЗИК (Bulgarian).",
-        "expert": "Отговаряй като академичен експерт с висока техническа детайлност. ЗАДЪЛЖИТЕЛНО пиши на БЪЛГАРСКИ ЕЗИК (Bulgarian).",
-        "bullet_points": "Отговаряй КРАТКО и ТОЧНО, използвайки САМО булет пойнти (списък). ЗАДЪЛЖИТЕЛНО пиши на БЪЛГАРСКИ ЕЗИК (Bulgarian)."
-    }
-    persona_prompt = persona_instructions.get(persona, persona_instructions["default"])
-
-    # ПРОМЕНЕНО: Инжектираме персоната и езика в темплейта
-    custom_template = """Ти си AI асистент. ТВОЕТО ОСНОВНО ПРАВИЛО Е ДА ОТГОВАРЯШ ВИНАГИ НА БЪЛГАРСКИ ЕЗИК (BULGARIAN)! Не използвай английски.
-
-    Инструкция за стил: {persona_instruction}
+    # 3. ИЗБИРАМЕ ПРАВИЛНИЯ ПРОМПТ СПРЯМО ПЕРСОНАТА
+    # Ако фронтендът прати непозната персона, използваме "default"
+    raw_template = PERSONA_PROMPTS.get(persona, PERSONA_PROMPTS["default"])
     
-    Използвай следния контекст от документи, за да отговориш на въпроса. Ако отговорът не се съдържа в контекста, кажи го, но отново на български език.
-
-    Контекст:
-    {context}
-
-    История на чата:
-    {history}
-
-    Въпрос: {question}
-    Отговор на български език:"""
-    
-    prompt = PromptTemplate(template=custom_template, input_variables=["persona_instruction", "context", "question", "history"])
-    final_prompt = prompt.format(persona_instruction=persona_prompt, context=context_text, question=question, history=history_text)
+    prompt = PromptTemplate(template=raw_template, input_variables=["context", "question", "history"])
+    final_prompt = prompt.format(context=context_text, question=question, history=history_text)
 
     full_response = ""
-    for chunk in llm.stream(final_prompt):
+    
+    # Стрийминг към фронтенда (както го направихме преди)
+    async for chunk in llm.astream(final_prompt):
         full_response += chunk.content
         yield chunk.content
-        
+
+    # Добавяне на източници
     yield "\n\n===SOURCES===\n"
     sources_list = [{"content": doc.page_content, "page": doc.metadata.get("page", 0) + 1} for doc in docs]
     yield json.dumps(sources_list)
-    
+
+    # Добавяне на следващи въпроси
     yield "\n\n===FOLLOW_UPS===\n"
     follow_ups = generate_followups(question, full_response)
     yield json.dumps(follow_ups)
