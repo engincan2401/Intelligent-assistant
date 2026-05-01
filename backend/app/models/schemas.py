@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class QuizOption(BaseModel):
     text: str
@@ -25,9 +25,10 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str
-    chat_history: List[Message] = []
-    filename: Optional[str] = None
-    persona: Optional[str] = "default"
+    chat_history: List[Dict[str, Any]] = []
+    filename: Optional[str] = "all"
+    persona: str = "default"
+    session_id: Optional[int] = None
 
 
 class DocumentInfo(BaseModel):

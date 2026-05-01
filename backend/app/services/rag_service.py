@@ -2,11 +2,11 @@ import json
 import re
 from langchain_ollama import ChatOllama
 from langchain_chroma import Chroma
-from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from app.services.vector_service import embedding_model, CHROMA_PATH
+from app.database import SessionLocal, ChatSession, ChatMessage
 
 llm = ChatOllama(model="llama3", temperature=0.1)
 
@@ -93,6 +93,27 @@ def generate_followups(question: str, answer: str):
     except Exception as e:
         print("Грешка при генериране на follow-ups:", e)
         return []
+    
+async def needs_document_search(question: str) -> bool:
+    """
+    Бърз класификатор, който преценява дали въпросът изисква търсене в базата данни.
+    """
+    router_prompt = f"""Прецени дали следният въпрос изисква търсене в база данни с документи, или е просто общ разговор/поздрав.
+Въпрос: "{question}"
+Отговори САМО с 'YES' (ако трябва търсене в документи) или 'NO' (ако е общ разговор/поздрав). Никакви други думи!"""
+    
+    try:
+        # Използваме ainvoke за бърз синхронен отговор от модела
+        response = await llm.ainvoke(router_prompt)
+        answer = response.content.strip().upper()
+        
+        # Ако моделът е върнал NO, значи не ни трябват документи
+        if "NO" in answer:
+            return False
+        return True # Във всички останали случаи търсим в базата
+    except Exception as e:
+        print(f"Грешка в рутера: {e}")
+        return True # При грешка се презастраховаме и търсим в базата
 
 PERSONA_PROMPTS = {
     "default": """Ти си полезен AI асистент. 
@@ -137,13 +158,21 @@ PERSONA_PROMPTS = {
 }
 
 # 2. ОБНОВЕНАТА ФУНКЦИЯ ЗА СТРИЙМИНГ
-async def stream_answer(question: str, chat_history: list, filename: str = None, persona: str = "default"):
-    # ВЗЕМАМЕ БАЗАТА (вече е супер бързо, защото е заредена в паметта!)
-    db = get_db()
-
-    # Търсене на релевантни документи (вашата логика за хибридно търсене)
-    docs = custom_hybrid_search(question, db, filename, k=4)
-    context_text = "\n\n---\n\n".join([doc.page_content for doc in docs])
+async def stream_answer(question: str, chat_history: list, filename: str = None, persona: str = "default", session_id: int = None):
+   # 1. Питаме Рутера дали изобщо да търсим в базата
+    should_search = await needs_document_search(question)
+    
+    docs = []
+    context_text = ""
+    
+    if should_search:
+        print("🔍 Рутерът каза YES: Търсене в базата данни...")
+        db = get_db()
+        docs = custom_hybrid_search(question, db, filename, k=4)
+        context_text = "\n\n---\n\n".join([doc.page_content for doc in docs])
+    else:
+        print("💬 Рутерът каза NO: Директен разговор (без база данни).")
+        context_text = "Няма прикачен контекст. Това е общ разговор."
 
     # Форматиране на историята
     history_text = ""
@@ -177,6 +206,28 @@ async def stream_answer(question: str, chat_history: list, filename: str = None,
     yield "\n\n===FOLLOW_UPS===\n"
     follow_ups = generate_followups(question, full_response)
     yield json.dumps(follow_ups)
+
+    if session_id:
+        db_session = SessionLocal()
+        try:
+            # Записваме въпроса на потребителя
+            user_msg = ChatMessage(session_id=session_id, role="user", content=question)
+            db_session.add(user_msg)
+            
+            # Записваме отговора на асистента
+            assistant_msg = ChatMessage(session_id=session_id, role="assistant", content=full_response)
+            db_session.add(assistant_msg)
+            
+            # Обновяваме заглавието на чата (ако все още е "Нов разговор")
+            chat_session = db_session.query(ChatSession).filter(ChatSession.id == session_id).first()
+            if chat_session and chat_session.title == "Нов разговор":
+                chat_session.title = question[:30] + "..."
+                
+            db_session.commit()
+        except Exception as e:
+            print(f"Грешка при запис в базата: {e}")
+        finally:
+            db_session.close()
 
 def generate_document_summary(filename: str):
     """Генерира детайлно резюме на документа на база най-важните му части."""

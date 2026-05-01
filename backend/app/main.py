@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.documents import router as documents_router
 import uvicorn
 from app.api.chat import router as chat_router
+from app.database import init_db
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
@@ -13,6 +14,8 @@ app = FastAPI(
     description="Backend",
     version="1.0.0"
 )
+
+init_db()
 
 origins = [
     "http://localhost:5173",

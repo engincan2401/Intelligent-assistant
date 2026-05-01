@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 import { useState, useRef, useEffect } from 'react';
-import { flushSync } from 'react-dom'; // Добавено за стрийминга
-import { Send, User, Bot, Loader2, BookOpen, BrainCircuit, Copy, Check, Trash2, Lightbulb, X, MessageSquarePlus, Eraser, ListTodo, Mic, MicOff, Volume2, Square } from 'lucide-react';
+import { flushSync } from 'react-dom';
+import { Send, User, Bot, Loader2, BookOpen, BrainCircuit, Copy, Check, Trash2, Lightbulb, X, MessageSquarePlus, Eraser, ListTodo, Mic, MicOff, Volume2, Square, Menu, Plus, MessageSquare } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { documentService, flashcardService, quizService } from '../service/api';
@@ -9,16 +9,13 @@ import FlashcardList from './FlashcardList';
 import QuizInterface from './QuizInterface';
 
 export default function ChatInterface({ refreshDocs }) {
-  // 1. ИНИЦИАЛИЗАЦИЯ ОТ LOCAL STORAGE
-  const [messages, setMessages] = useState(() => {
-    const saved = localStorage.getItem('chat_history');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { return []; }
-    }
-    return [];
-  });
+  // --- НОВИ ЩАТИ ЗА БАЗАТА ДАННИ И МЕНЮТО ---
+  const [sessions, setSessions] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // НОВ ЩАТ: За съобщението, което се стриймва в реално време
+  // Съобщенията вече стартират като празен масив (ще се зареждат от базата)
+  const [messages, setMessages] = useState([]);
   const [streamingMessage, setStreamingMessage] = useState(null);
 
   const [input, setInput] = useState('');
@@ -40,7 +37,6 @@ export default function ChatInterface({ refreshDocs }) {
 
   const [copiedIndex, setCopiedIndex] = useState(null);
   
-  // --- ЩАТИ ЗА ГЛАС ---
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const recognitionRef = useRef(null);
@@ -55,10 +51,75 @@ export default function ChatInterface({ refreshDocs }) {
     scrollToBottom();
   }, [messages, isLoading, streamingMessage]);
 
-  // 2. АВТОМАТИЧНО ЗАПАЗВАНЕ ПРИ ПРОМЯНА
+  // --- ИЗТЕГЛЯНЕ НА СЕСИИТЕ ОТ БЕКЕНДА ПРИ ЗАРЕЖДАНЕ ---
   useEffect(() => {
-    localStorage.setItem('chat_history', JSON.stringify(messages));
-  }, [messages]);
+    fetchSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fetchSessions = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/chat/sessions');
+      const data = await res.json();
+      setSessions(data);
+      
+      if (data.length > 0 && !currentSessionId) {
+        loadSessionMessages(data[0].id);
+      } else if (data.length === 0) {
+        handleNewChat();
+      }
+    } catch (error) {
+      console.error("Грешка при зареждане на сесии:", error);
+    }
+  };
+
+  const loadSessionMessages = async (id) => {
+    setCurrentSessionId(id);
+    setMessages([]);
+    try {
+      const res = await fetch(`http://localhost:8000/api/chat/sessions/${id}/messages`);
+      const data = await res.json();
+      const formatted = data.map(m => ({
+        role: m.role,
+        content: m.content,
+        sources: [], 
+        followUps: []
+      }));
+      setMessages(formatted);
+    } catch (error) {
+      console.error("Грешка при зареждане на съобщения:", error);
+    }
+  };
+
+  const handleNewChat = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/chat/sessions', { method: 'POST' });
+      const newSession = await res.json();
+      setSessions([newSession, ...sessions]);
+      setCurrentSessionId(newSession.id);
+      setMessages([]);
+    } catch (error) {
+      console.error("Грешка при създаване на чат:", error);
+    }
+  };
+
+  const handleDeleteSession = async (e, id) => {
+    e.stopPropagation();
+    if (!window.confirm("Сигурни ли сте, че искате да изтриете този разговор?")) return;
+    
+    try {
+      await fetch(`http://localhost:8000/api/chat/sessions/${id}`, { method: 'DELETE' });
+      const updated = sessions.filter(s => s.id !== id);
+      setSessions(updated);
+      
+      if (currentSessionId === id) {
+        if (updated.length > 0) loadSessionMessages(updated[0].id);
+        else handleNewChat();
+      }
+    } catch (error) {
+      console.error("Грешка при изтриване:", error);
+    }
+  };
 
   // --- ИНИЦИАЛИЗАЦИЯ НА МИКРОФОНА (Speech-to-Text) ---
   useEffect(() => {
@@ -67,7 +128,7 @@ export default function ChatInterface({ refreshDocs }) {
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
-      recognitionRef.current.lang = 'bg-BG'; // Настроено за български
+      recognitionRef.current.lang = 'bg-BG';
 
       recognitionRef.current.onresult = (event) => {
         let transcript = '';
@@ -228,7 +289,8 @@ export default function ChatInterface({ refreshDocs }) {
   const handleClearChat = () => {
     if (window.confirm("Сигурни ли сте, че искате да изчистите историята на чата?")) {
       setMessages([]);
-      localStorage.removeItem('chat_history');
+      // Тук можете да добавите и логика за изтриване на сесията, 
+      // но засега само изчистваме екрана.
     }
   };
 
@@ -250,6 +312,7 @@ export default function ChatInterface({ refreshDocs }) {
     }
 
     const userMessage = input.trim();
+    const isFirstMessage = messages.length === 0;
     setInput('');
     setIsLoading(true);
 
@@ -266,7 +329,8 @@ export default function ChatInterface({ refreshDocs }) {
           question: userMessage, 
           chat_history: historyToPass,
           filename: selectedDoc !== 'all' ? selectedDoc : null,
-          persona: persona
+          persona: persona,
+          session_id: currentSessionId // ДОБАВЕНО: Изпращане на session_id
         })
       });
 
@@ -330,6 +394,11 @@ export default function ChatInterface({ refreshDocs }) {
       
       setStreamingMessage(null);
 
+      // Обновяване на списъка със сесии (за да се обнови заглавието), ако това е първият въпрос
+      if (isFirstMessage) {
+        fetchSessions();
+      }
+
     } catch (error) {
       console.error('Streaming error:', error);
       setMessages((prev) => [
@@ -367,268 +436,304 @@ export default function ChatInterface({ refreshDocs }) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 h-full min-h-[500px] relative">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex h-[600px] overflow-hidden relative">
       
-      {/* ХЕДЪР НА ЧАТА */}
-      <div className="p-4 border-b border-gray-100 bg-gray-50 rounded-t-xl flex flex-wrap justify-between items-center gap-3">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-            <Bot className="w-5 h-5 mr-2 text-blue-600" />
-            Асистент
-          </h2>
-          
-          {messages.length > 0 && (
-            <button
-              onClick={handleClearChat}
-              className="text-xs flex items-center gap-1 text-gray-500 hover:text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors"
-              title="Изчисти историята на чата"
-            >
-              <Eraser className="w-3.5 h-3.5" />
-              Изчисти
-            </button>
-          )}
+      {/* СТРАНИЧНО МЕНЮ (SIDEBAR) */}
+      <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 flex-shrink-0 bg-gray-50 border-r border-gray-200 flex flex-col overflow-hidden z-20`}>
+        <div className="p-4">
+          <button onClick={handleNewChat} className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+            <Plus className="w-4 h-4" /> Нов разговор
+          </button>
         </div>
         
-        <div className="flex gap-2 items-center flex-wrap">
-          <button
-              onClick={handleGenerateQuiz}
-              disabled={isGeneratingQuiz || availableDocs.length === 0}
-              className="flex items-center text-sm font-medium bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg hover:bg-indigo-200 transition-colors disabled:opacity-50"
+        <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-1">
+          {sessions.map(session => (
+            <div 
+              key={session.id} 
+              onClick={() => loadSessionMessages(session.id)}
+              className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors group ${currentSessionId === session.id ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-200 text-gray-700'}`}
             >
-              {isGeneratingQuiz ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <ListTodo className="w-4 h-4 mr-1.5" />}
-              <span className="hidden sm:inline">Тест</span>
-            </button>
-          <button
-            onClick={handleGenerateCards}
-            disabled={isGeneratingCards || availableDocs.length === 0}
-            className="flex items-center text-sm font-medium bg-purple-100 text-purple-700 px-3 py-2 rounded-lg hover:bg-purple-200 transition-colors disabled:opacity-50"
-          >
-            {isGeneratingCards ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <BrainCircuit className="w-4 h-4 mr-1.5" />}
-            <span className="hidden sm:inline">Флашкарти</span>
-          </button>
-
-          <select 
-            value={persona} 
-            onChange={(e) => setPersona(e.target.value)}
-            className="bg-white border border-gray-300 text-gray-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none shadow-sm cursor-pointer"
-          >
-            <option value="default">Стандартен стил</option>
-            <option value="simple">Като на 10-годишен</option>
-            <option value="expert">Академичен експерт</option>
-            <option value="bullet_points">Само кратки списъци</option>
-          </select>
-
-          <div className="flex items-center gap-1 bg-white border border-gray-300 rounded-lg shadow-sm pr-1">
-            <select 
-              value={selectedDoc} 
-              onChange={(e) => setSelectedDoc(e.target.value)}
-              className="text-gray-700 text-sm bg-transparent focus:ring-0 focus:outline-none block p-2 cursor-pointer max-w-[150px] md:max-w-[180px] truncate border-none"
-            >
-              <option value="all">Всички документи</option>
-              {availableDocs.map((doc, idx) => (
-                <option key={idx} value={doc}>{doc}</option>
-              ))}
-            </select>
-            
-            {selectedDoc !== 'all' && (
-              <div className="flex items-center border-l border-gray-200 pl-1">
-                <button onClick={handleGetSummary} className="p-1.5 text-blue-500 hover:bg-blue-50 hover:text-blue-700 rounded-md transition-colors" title="AI Резюме">
-                  <Lightbulb className="w-4 h-4" />
-                </button>
-                <button onClick={handleDeleteDocument} disabled={isDeleting} className="p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-md transition-colors disabled:opacity-50" title="Изтрий">
-                  {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                </button>
+              <div className="flex items-center gap-2 overflow-hidden">
+                <MessageSquare className="w-4 h-4 flex-shrink-0 opacity-60" />
+                <span className="text-sm truncate font-medium">{session.title}</span>
               </div>
-            )}
-          </div>
+              <button 
+                onClick={(e) => handleDeleteSession(e, session.id)} 
+                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 rounded transition-all"
+                title="Изтрий"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
         </div>
       </div>
 
-      {showCards && <FlashcardList cards={flashcards} onClose={() => setShowCards(false)} />}
-      {showQuiz && <QuizInterface questions={quizData} onClose={() => setShowQuiz(false)} />}
-      
-      {summaryData.isOpen && (
-        <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-50 flex flex-col rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-          <div className="p-4 border-b flex justify-between items-center bg-blue-50/50">
-            <h3 className="font-bold text-gray-800 flex items-center gap-2">
-              <Lightbulb className="w-5 h-5 text-blue-600" /> Резюме: {selectedDoc}
-            </h3>
-            <button onClick={() => setSummaryData({ ...summaryData, isOpen: false })} className="p-1 hover:bg-gray-200 rounded-full transition-colors">
-              <X className="w-5 h-5 text-gray-500" />
+      {/* ОСНОВНА ЧАСТ НА ЧАТА */}
+      <div className="flex flex-col flex-1 h-full min-w-0 relative">
+        
+        {/* ХЕДЪР НА ЧАТА */}
+        <div className="p-3 sm:p-4 border-b border-gray-100 bg-white flex flex-wrap justify-between items-center gap-3">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors" title="Покажи/Скрий менюто">
+              <Menu className="w-5 h-5" />
             </button>
-          </div>
-          <div className="p-6 overflow-y-auto flex-1">
-            {summaryData.isLoading ? (
-              <div className="flex flex-col items-center justify-center h-full space-y-4 text-gray-500">
-                <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
-                <p className="animate-pulse font-medium">Анализиране и синтезиране на текста...</p>
-              </div>
-            ) : (
-              <div className="prose prose-blue max-w-none text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                {summaryData.text}
-              </div>
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center hidden sm:flex">
+              <Bot className="w-5 h-5 mr-2 text-blue-600" />
+              Асистент
+            </h2>
+            
+            {messages.length > 0 && (
+              <button
+                onClick={handleClearChat}
+                className="text-xs flex items-center gap-1 text-gray-500 hover:text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors hidden md:flex"
+                title="Изчисти екрана"
+              >
+                <Eraser className="w-3.5 h-3.5" />
+                Изчисти
+              </button>
             )}
           </div>
-        </div>
-      )}
+          
+          <div className="flex gap-2 items-center flex-wrap">
+            <button
+                onClick={handleGenerateQuiz}
+                disabled={isGeneratingQuiz || availableDocs.length === 0}
+                className="flex items-center text-sm font-medium bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg hover:bg-indigo-200 transition-colors disabled:opacity-50"
+              >
+                {isGeneratingQuiz ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <ListTodo className="w-4 h-4 mr-1.5" />}
+                <span className="hidden lg:inline">Тест</span>
+              </button>
+            <button
+              onClick={handleGenerateCards}
+              disabled={isGeneratingCards || availableDocs.length === 0}
+              className="flex items-center text-sm font-medium bg-purple-100 text-purple-700 px-3 py-2 rounded-lg hover:bg-purple-200 transition-colors disabled:opacity-50"
+            >
+              {isGeneratingCards ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <BrainCircuit className="w-4 h-4 mr-1.5" />}
+              <span className="hidden lg:inline">Флашкарти</span>
+            </button>
 
-      {/* ЗОНА ЗА СЪОБЩЕНИЯ */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {messages.length === 0 && !streamingMessage ? (
-          <div className="h-full flex flex-col items-center justify-center text-gray-400">
-            <Bot className="w-12 h-12 mb-3 opacity-20" />
-            <p>Задайте въпрос относно качените документи.</p>
-          </div>
-        ) : (
-          <>
-            {messages.map((msg, index) => (
-              <div key={index} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                  msg.role === 'user' ? 'bg-blue-100 text-blue-600' : 
-                  msg.isError ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'
-                }`}>
-                  {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
+            <select 
+              value={persona} 
+              onChange={(e) => setPersona(e.target.value)}
+              className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-blue-500 block p-2 outline-none shadow-sm cursor-pointer hidden md:block"
+            >
+              <option value="default">Стандартен стил</option>
+              <option value="simple">Като на 10-годишен</option>
+              <option value="expert">Академичен експерт</option>
+              <option value="bullet_points">Само кратки списъци</option>
+            </select>
+
+            <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-lg shadow-sm pr-1">
+              <select 
+                value={selectedDoc} 
+                onChange={(e) => setSelectedDoc(e.target.value)}
+                className="text-gray-700 text-sm bg-transparent focus:ring-0 focus:outline-none block p-2 cursor-pointer max-w-[100px] md:max-w-[150px] truncate border-none"
+              >
+                <option value="all">Всички документи</option>
+                {availableDocs.map((doc, idx) => (
+                  <option key={idx} value={doc}>{doc}</option>
+                ))}
+              </select>
+              
+              {selectedDoc !== 'all' && (
+                <div className="flex items-center border-l border-gray-200 pl-1">
+                  <button onClick={handleGetSummary} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded-md transition-colors" title="AI Резюме">
+                    <Lightbulb className="w-4 h-4" />
+                  </button>
+                  <button onClick={handleDeleteDocument} disabled={isDeleting} className="p-1.5 text-red-400 hover:bg-red-100 rounded-md transition-colors disabled:opacity-50" title="Изтрий">
+                    {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </button>
                 </div>
+              )}
+            </div>
+          </div>
+        </div>
 
-                <div className={`max-w-[80%] overflow-x-auto ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-none shadow-sm'} p-4`}>
-                  
-                  {msg.role === 'user' ? (
-                    <div className="whitespace-pre-wrap">{msg.content}</div>
-                  ) : msg.isError ? (
-                    <div className="text-red-600 whitespace-pre-wrap font-medium">{msg.content}</div>
-                  ) : (
+        {showCards && <FlashcardList cards={flashcards} onClose={() => setShowCards(false)} />}
+        {showQuiz && <QuizInterface questions={quizData} onClose={() => setShowQuiz(false)} />}
+        
+        {summaryData.isOpen && (
+          <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-50 flex flex-col rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b flex justify-between items-center bg-blue-50/50">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <Lightbulb className="w-5 h-5 text-blue-600" /> Резюме: {selectedDoc}
+              </h3>
+              <button onClick={() => setSummaryData({ ...summaryData, isOpen: false })} className="p-1 hover:bg-gray-200 rounded-full transition-colors">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              {summaryData.isLoading ? (
+                <div className="flex flex-col items-center justify-center h-full space-y-4 text-gray-500">
+                  <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
+                  <p className="animate-pulse font-medium">Анализиране и синтезиране на текста...</p>
+                </div>
+              ) : (
+                <div className="prose prose-blue max-w-none text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                  {summaryData.text}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ЗОНА ЗА СЪОБЩЕНИЯ */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-white">
+          {messages.length === 0 && !streamingMessage ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+              <Bot className="w-12 h-12 mb-3 opacity-20" />
+              <p>Това е началото на разговора.</p>
+            </div>
+          ) : (
+            <>
+              {messages.map((msg, index) => (
+                <div key={index} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                    msg.role === 'user' ? 'bg-blue-100 text-blue-600' : 
+                    msg.isError ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'
+                  }`}>
+                    {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
+                  </div>
+
+                  <div className={`max-w-[85%] overflow-x-auto ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-none shadow-sm'} p-4`}>
+                    
+                    {msg.role === 'user' ? (
+                      <div className="whitespace-pre-wrap">{msg.content}</div>
+                    ) : msg.isError ? (
+                      <div className="text-red-600 whitespace-pre-wrap font-medium">{msg.content}</div>
+                    ) : (
+                      <div className="text-sm md:text-base text-gray-700 relative">
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkGfm]}
+                          components={markdownComponents}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+
+                        <div className="mt-3 pt-2 flex justify-end gap-2">
+                          <button
+                            onClick={() => handleSpeak(msg.content)}
+                            className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 hover:bg-blue-100 px-2 py-1.5 rounded-md border border-blue-100"
+                          >
+                            {isSpeaking ? <><Square className="w-3.5 h-3.5 mr-1.5 fill-current" /> Спри</> : <><Volume2 className="w-3.5 h-3.5 mr-1.5" /> Прочети</>}
+                          </button>
+                          <button
+                            onClick={() => handleCopy(msg.content, index)}
+                            className="flex items-center text-xs text-gray-500 hover:text-gray-800 transition-colors bg-gray-50 hover:bg-gray-100 px-2 py-1.5 rounded-md border border-gray-100"
+                          >
+                            {copiedIndex === index ? <><Check className="w-3.5 h-3.5 mr-1.5 text-green-600" /><span className="text-green-600 font-medium">Копирано</span></> : <><Copy className="w-3.5 h-3.5 mr-1.5" />Копирай</>}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {msg.sources && msg.sources.length > 0 && !msg.isError && (
+                      <div className="mt-4 pt-3 border-t border-gray-200">
+                        <p className="text-xs font-semibold flex items-center mb-2 text-gray-600">
+                          <BookOpen className="w-3 h-3 mr-1" /> Източници:
+                        </p>
+                        <div className="space-y-2">
+                          {msg.sources.map((source, idx) => (
+                            <div key={idx} className="bg-gray-50 p-2 rounded text-xs text-gray-600 border border-gray-200">
+                              <span className="font-semibold text-gray-700 block mb-1">Страница {source.page}</span>
+                              <p className="line-clamp-3 italic">"{source.content}"</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {msg.followUps && msg.followUps.length > 0 && !isLoading && index === messages.length - 1 && (
+                      <div className="mt-4 pt-3 border-t border-gray-200">
+                        <p className="text-xs font-semibold flex items-center mb-2 text-gray-500 uppercase tracking-wider">
+                          <MessageSquarePlus className="w-3 h-3 mr-1" /> Може би искате да попитате:
+                        </p>
+                        <div className="flex flex-col gap-1.5">
+                          {msg.followUps.map((q, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => handleFollowUpClick(q)}
+                              className="text-left text-xs px-3 py-2 bg-blue-50/50 border border-blue-100 text-blue-700 hover:bg-blue-100 hover:border-blue-200 transition-all rounded-lg font-medium"
+                            >
+                              {q}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {streamingMessage && (
+                <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-green-100 text-green-600">
+                    <Bot className="w-5 h-5" />
+                  </div>
+
+                  <div className="max-w-[80%] overflow-x-auto bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-none shadow-sm p-4">
                     <div className="text-sm md:text-base text-gray-700 relative">
                       <ReactMarkdown 
                         remarkPlugins={[remarkGfm]}
                         components={markdownComponents}
                       >
-                        {msg.content}
+                        {streamingMessage.content}
                       </ReactMarkdown>
-
-                      {/* Бутони за Копиране и Четене */}
-                      <div className="mt-3 pt-2 flex justify-end gap-2">
-                        <button
-                          onClick={() => handleSpeak(msg.content)}
-                          className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 hover:bg-blue-100 px-2 py-1.5 rounded-md border border-blue-100"
-                        >
-                          {isSpeaking ? <><Square className="w-3.5 h-3.5 mr-1.5 fill-current" /> Спри</> : <><Volume2 className="w-3.5 h-3.5 mr-1.5" /> Прочети</>}
-                        </button>
-                        <button
-                          onClick={() => handleCopy(msg.content, index)}
-                          className="flex items-center text-xs text-gray-500 hover:text-gray-800 transition-colors bg-gray-50 hover:bg-gray-100 px-2 py-1.5 rounded-md border border-gray-100"
-                        >
-                          {copiedIndex === index ? <><Check className="w-3.5 h-3.5 mr-1.5 text-green-600" /><span className="text-green-600 font-medium">Копирано</span></> : <><Copy className="w-3.5 h-3.5 mr-1.5" />Копирай</>}
-                        </button>
-                      </div>
+                      <span className="inline-block w-1.5 h-4 ml-1 bg-blue-500 animate-pulse"></span>
                     </div>
-                  )}
-                  
-                  {msg.sources && msg.sources.length > 0 && !msg.isError && (
-                    <div className="mt-4 pt-3 border-t border-gray-200">
-                      <p className="text-xs font-semibold flex items-center mb-2 text-gray-600">
-                        <BookOpen className="w-3 h-3 mr-1" /> Източници:
-                      </p>
-                      <div className="space-y-2">
-                        {msg.sources.map((source, idx) => (
-                          <div key={idx} className="bg-gray-50 p-2 rounded text-xs text-gray-600 border border-gray-200">
-                            <span className="font-semibold text-gray-700 block mb-1">Страница {source.page}</span>
-                            <p className="line-clamp-3 italic">"{source.content}"</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {msg.followUps && msg.followUps.length > 0 && !isLoading && index === messages.length - 1 && (
-                    <div className="mt-4 pt-3 border-t border-gray-200">
-                      <p className="text-xs font-semibold flex items-center mb-2 text-gray-500 uppercase tracking-wider">
-                        <MessageSquarePlus className="w-3 h-3 mr-1" /> Може би искате да попитате:
-                      </p>
-                      <div className="flex flex-col gap-1.5">
-                        {msg.followUps.map((q, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => handleFollowUpClick(q)}
-                            className="text-left text-xs px-3 py-2 bg-blue-50/50 border border-blue-100 text-blue-700 hover:bg-blue-100 hover:border-blue-200 transition-all rounded-lg font-medium"
-                          >
-                            {q}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* СЪОБЩЕНИЕ В РЕАЛНО ВРЕМЕ */}
-            {streamingMessage && (
-              <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-green-100 text-green-600">
-                  <Bot className="w-5 h-5" />
-                </div>
-
-                <div className="max-w-[80%] overflow-x-auto bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-none shadow-sm p-4">
-                  <div className="text-sm md:text-base text-gray-700 relative">
-                    <ReactMarkdown 
-                      remarkPlugins={[remarkGfm]}
-                      components={markdownComponents}
-                    >
-                      {streamingMessage.content}
-                    </ReactMarkdown>
-                    <span className="inline-block w-1.5 h-4 ml-1 bg-blue-500 animate-pulse"></span>
                   </div>
                 </div>
-              </div>
-            )}
-          </>
-        )}
-        
-        {isLoading && !streamingMessage && (
-          <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
-              <Bot className="w-5 h-5" />
-            </div>
-            <div className="bg-gray-100 text-gray-800 rounded-2xl rounded-tl-none p-4 flex items-center">
-              <Loader2 className="w-5 h-5 animate-spin text-gray-500 mr-2" />
-              <span className="text-gray-500 text-sm">Генериране на отговор...</span>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <form id="chat-form" onSubmit={handleSubmit} className="p-4 bg-white border-t border-gray-100 rounded-b-xl z-10">
-        <div className="flex items-center gap-2">
+              )}
+            </>
+          )}
           
-          <button
-            type="button"
-            onClick={toggleListening}
-            className={`p-3 rounded-lg flex-shrink-0 transition-colors ${
-              isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-            title={isListening ? 'Спри микрофона' : 'Говори'}
-          >
-            {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          </button>
-
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={isListening ? "Слушам ви..." : "Попитайте нещо..."}
-            disabled={isLoading}
-            className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading}
-            className="bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-          >
-            <Send className="w-5 h-5" />
-          </button>
+          {isLoading && !streamingMessage && (
+            <div className="flex gap-4">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
+                <Bot className="w-5 h-5" />
+              </div>
+              <div className="bg-gray-100 text-gray-800 rounded-2xl rounded-tl-none p-4 flex items-center">
+                <Loader2 className="w-5 h-5 animate-spin text-gray-500 mr-2" />
+                <span className="text-gray-500 text-sm">Генериране на отговор...</span>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
-      </form>
+
+        <form id="chat-form" onSubmit={handleSubmit} className="p-4 bg-white border-t border-gray-100 z-10">
+          <div className="flex items-center gap-2">
+            
+            <button
+              type="button"
+              onClick={toggleListening}
+              className={`p-3 rounded-lg flex-shrink-0 transition-colors ${
+                isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+              title={isListening ? 'Спри микрофона' : 'Говори'}
+            >
+              {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            </button>
+
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={isListening ? "Слушам ви..." : "Попитайте нещо..."}
+              disabled={isLoading}
+              className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || isLoading}
+              className="bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              <Send className="w-5 h-5" />
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
