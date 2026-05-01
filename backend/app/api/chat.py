@@ -19,7 +19,7 @@ async def ask_question_stream(request: ChatRequest):
                 persona=request.persona,
                 session_id=request.session_id
             ),
-            media_type="text/plain"
+            media_type="text/event-stream"
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
