@@ -10,37 +10,36 @@ from langchain_community.document_loaders import (
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.services.vector_service import add_chunks_to_vector_db
 
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 async def process_and_store_document(file: UploadFile, client_id: str = None, manager=None):
-    # ПРОГРЕС: 10% - Създаване на временен файл
     if manager and client_id:
         await manager.send_progress(client_id, 10, f"Подготовка на файла: {file.filename}...")
 
-    # Вземаме разширението на файла (напр. '.pdf', '.docx', '.txt')
     file_extension = os.path.splitext(file.filename)[1].lower()
-
-    # Създаваме временния файл с правилното разширение
-    with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
-        temp_file.write(await file.read())
-        temp_path = temp_file.name
+    
+    # НОВО: Запазваме файла трайно в папката uploads
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
 
     try:
-        # ПРОГРЕС: 30% - Четене на съдържанието
         if manager and client_id:
             await manager.send_progress(client_id, 30, f"Четене и извличане на текст от файла...")
 
-        # Избираме правилния инструмент (Loader) според файла
+        # ВАЖНО: Вече използваме file_path вместо temp_path
         if file_extension == ".pdf":
-            loader = PyPDFLoader(temp_path)
+            loader = PyPDFLoader(file_path)
         elif file_extension == ".txt":
-            loader = TextLoader(temp_path, encoding="utf-8")
+            loader = TextLoader(file_path, encoding="utf-8")
         elif file_extension == ".docx":
-            loader = Docx2txtLoader(temp_path)
+            loader = Docx2txtLoader(file_path)
         elif file_extension == ".csv":
-            loader = CSVLoader(temp_path, encoding="utf-8")
+            loader = CSVLoader(file_path, encoding="utf-8")
         else:
-            raise ValueError(f"Неподдържан файлов формат: {file_extension}. Моля, качете PDF, TXT, DOCX или CSV.")
+            raise ValueError(f"Неподдържан файлов формат: {file_extension}")
 
-        # Извличаме съдържанието
         docs = loader.load()
         
         # Добавяме името на файла към метаданните, за да можем да търсим по него
@@ -81,7 +80,7 @@ async def process_and_store_document(file: UploadFile, client_id: str = None, ma
             await manager.send_progress(client_id, 0, f"Възникна грешка: {str(e)}")
         raise Exception(f"Грешка при обработка на файла: {str(e)}")
         
-    finally:
+
         # Почистваме временния файл, за да не пълним паметта
         if os.path.exists(temp_path):
             os.remove(temp_path)

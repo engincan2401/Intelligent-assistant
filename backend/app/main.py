@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.documents import router as documents_router
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 from app.api.chat import router as chat_router
 from app.database import init_db
@@ -32,6 +33,8 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.include_router(documents_router, prefix="/api/documents", tags=["Documents"])
 app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 

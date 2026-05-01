@@ -199,7 +199,7 @@ async def stream_answer(question: str, chat_history: list, filename: str = None,
 
     # Добавяне на източници
     yield "\n\n===SOURCES===\n"
-    sources_list = [{"content": doc.page_content, "page": doc.metadata.get("page", 0) + 1} for doc in docs]
+    sources_list = [{"content": doc.page_content, "page": doc.metadata.get("page", 0) + 1, "filename": doc.metadata.get("filename", "")} for doc in docs]
     yield json.dumps(sources_list)
 
     # Добавяне на следващи въпроси
