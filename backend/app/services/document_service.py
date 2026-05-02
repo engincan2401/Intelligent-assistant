@@ -1,5 +1,4 @@
 import os
-import tempfile
 from fastapi import UploadFile
 from langchain_community.document_loaders import (
     PyPDFLoader, 

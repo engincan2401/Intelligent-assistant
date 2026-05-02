@@ -79,6 +79,9 @@ export default function ChatInterface({ refreshDocs }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+  const UPLOADS_URL = import.meta.env.VITE_UPLOADS_URL || 'http://localhost:8000/uploads';
+
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading, streamingMessage]);
@@ -91,7 +94,7 @@ export default function ChatInterface({ refreshDocs }) {
 
   const fetchSessions = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/chat/sessions");
+      const res = await fetch(`${API_URL}/chat/sessions`);
       const data = await res.json();
       setSessions(data);
 
@@ -110,7 +113,7 @@ export default function ChatInterface({ refreshDocs }) {
     setMessages([]);
     try {
       const res = await fetch(
-        `http://localhost:8000/api/chat/sessions/${id}/messages`,
+        `${API_URL}/chat/sessions/${id}/messages`,
       );
       const data = await res.json();
       const formatted = data.map((m) => ({
@@ -127,7 +130,7 @@ export default function ChatInterface({ refreshDocs }) {
 
   const handleNewChat = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/chat/sessions", {
+      const res = await fetch(`${API_URL}/chat/sessions`, {
         method: "POST",
       });
       const newSession = await res.json();
@@ -145,7 +148,7 @@ export default function ChatInterface({ refreshDocs }) {
       return;
 
     try {
-      await fetch(`http://localhost:8000/api/chat/sessions/${id}`, {
+      await fetch(`${API_URL}/chat/sessions${id}`, {
         method: "DELETE",
       });
       const updated = sessions.filter((s) => s.id !== id);
@@ -385,7 +388,7 @@ export default function ChatInterface({ refreshDocs }) {
         content: msg.content,
       }));
 
-      const response = await fetch("http://localhost:8000/api/chat/stream", {
+      const response = await fetch(`${API_URL}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -856,7 +859,7 @@ export default function ChatInterface({ refreshDocs }) {
                                 ) {
                                   setPdfViewer({
                                     isOpen: true,
-                                    url: `http://localhost:8000/uploads/${source.filename}#page=${source.page}`,
+                                   url: `${UPLOADS_URL}/${source.filename}#page=${source.page}`,
                                     title: `${source.filename} - Страница ${source.page}`,
                                   });
                                 } else {

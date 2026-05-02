@@ -404,3 +404,15 @@ def generate_quiz(filename: str, num_questions: int = 5):
     except Exception as e:
         print("🚨 ГРЕШКА при парсване на теста:", str(e))
         return []
+    
+def clear_bm25_cache(filename: str = None):
+    """Изчиства BM25 кеша, когато документ бъде изтрит."""
+    global bm25_cache
+    if filename and filename in bm25_cache:
+        del bm25_cache[filename]
+        print(f"🧹 BM25 кешът за {filename} е изчистен.")
+    
+    # Винаги изчистваме и кеша за "all", за да се преизчисли без изтрития файл
+    if "all" in bm25_cache:
+        del bm25_cache["all"]
+        print("🧹 Общият BM25 кеш ('all') е нулиран.")

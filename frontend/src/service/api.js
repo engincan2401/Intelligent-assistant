@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -33,10 +33,6 @@ export const documentService = {
     const response = await api.get(`/documents/summary/${filename}`);
     return response.data.summary;
   },
-};
-
-export const chatService = {
-  // Not used — ChatInterface uses fetch() directly for streaming via /api/chat/stream
 };
 
 

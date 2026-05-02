@@ -2,10 +2,9 @@ import os
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
 from typing import Dict
 from app.services.document_service import process_and_store_document
-from app.models.schemas import DocumentInfo
 from app.services.vector_service import embedding_model, CHROMA_PATH
 from langchain_chroma import Chroma
-
+from app.services.rag_service import clear_bm25_cache
 router = APIRouter()
 
 # --- 1. МЕНИДЖЪР ЗА WEBSOCKETS ---
@@ -84,21 +83,23 @@ async def list_documents():
 @router.delete("/delete/{filename}")
 async def delete_document(filename: str):
     try:
+        # 1. Изтриване на векторите от ChromaDB
         db = Chroma(
             persist_directory=CHROMA_PATH,
             embedding_function=embedding_model,
             collection_name="diploma_documents"
         )
         db.delete(where={"filename": filename})
-        return {"message": f"Документът {filename} беше изтрит успешно."}
+
+        # 2. Изтриване на физическия файл от папката uploads/
+        file_path = os.path.join("uploads", filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print(f"🗑️ Физическият файл {filename} е изтрит от сървъра.")
+
+        # 3. Изчистване на BM25 кеша в паметта
+        clear_bm25_cache(filename)
+
+        return {"message": f"Документът {filename} беше изтрит напълно."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Грешка при изтриване: {str(e)}")
-    
-@router.get("/summary/{filename}")
-async def get_summary(filename: str):
-    from app.services.rag_service import generate_document_summary
-    try:
-        summary = generate_document_summary(filename)
-        return {"summary": summary}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Грешка при резюмиране: {str(e)}")
