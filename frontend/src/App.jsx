@@ -1,111 +1,126 @@
-import { useState, useCallback } from 'react';
-import ChatInterface from './components/ChatInterface';
-import DocumentUpload from './components/DocumentUpload';
-import { Bot, FileText, Zap } from 'lucide-react';
+import { useState, useCallback, useEffect } from "react";
+import ChatInterface from "./components/ChatInterface";
+import DocumentUpload from "./components/DocumentUpload";
+import { Bot, FileText, Zap, Moon, Sun } from "lucide-react";
 
 function App() {
   const [refreshDocs, setRefreshDocs] = useState(0);
 
+  // Щат за тъмната тема (вземаме предпочитанието от localStorage, ако го има)
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    return localStorage.getItem("theme") === "dark";
+  });
+
+  // Ефект, който добавя/премахва клас 'dark' от главния <html> таг
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  }, [isDarkMode]);
+
   const handleUploadSuccess = useCallback(() => {
-    setRefreshDocs(prev => prev + 1);
+    setRefreshDocs((prev) => prev + 1);
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
-      
-      {/* 1. ГЛАВЕН ХЕДЪР */}
-      <header className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-[#0B0F19] text-gray-900 dark:text-gray-100 transition-colors duration-300">
+      {/* 1. HEADER (С Glassmorphism ефект) */}
+      <header className="bg-white/80 dark:bg-[#111827]/80 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 shadow-sm sticky top-0 z-50 transition-colors duration-300">
         <nav className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-md">
               <Zap className="w-6 h-6" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-950 tracking-tight">
-              Интелигентен <span className="text-blue-600">Асистент</span>
+            <h1 className="text-2xl font-bold text-gray-950 dark:text-white tracking-tight">
+              Интелигентен <span className="text-blue-600 dark:text-blue-500">Асистент</span>
             </h1>
           </div>
-          
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-500">Статус:</span>
-            <div className="flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1 rounded-full text-xs font-semibold border border-green-100">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              Активен Llama 3
+
+          <div className="flex items-center gap-4">
+            {/* Бутон за Тъмна/Светла тема */}
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-2.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all"
+              title="Превключи тема"
+            >
+              {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+
+            <div className="hidden sm:flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Модел:</span>
+              <div className="flex items-center gap-1.5 bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-xs font-semibold border border-green-100 dark:border-green-500/20">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                Llama 3
+              </div>
             </div>
           </div>
         </nav>
       </header>
 
-      {/* 2. ОСНОВНО СЪДЪРЖАНИЕ */}
+      {/* 2. MAIN CONTENT */}
       <main className="max-w-7xl mx-auto p-6 md:p-8 space-y-8">
-        
-        {/* А. Блок за качване на документи (най-горе, цяла ширина) */}
         <section className="animate-in fade-in slide-in-from-top-4 duration-500">
           <DocumentUpload onUploadSuccess={handleUploadSuccess} />
         </section>
 
-        {/* Б. Мрежа с Чат и Асистент (един до друг) */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* Чат Интерфейс (2/3 от ширината на десктоп) */}
           <div className="lg:col-span-2 space-y-6 animate-in fade-in duration-500 delay-150">
-            <div className="flex items-center gap-3 pb-1 border-b border-gray-100">
-              <FileText className="w-5 h-5 text-gray-400" />
-              <h3 className="text-lg font-semibold text-gray-800">Разговор с документите</h3>
+            <div className="flex items-center gap-3 pb-1 border-b border-gray-200 dark:border-gray-800">
+              <FileText className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Работен плот</h3>
             </div>
             <ChatInterface refreshDocs={refreshDocs} />
           </div>
 
-          {/* Панел за информация / Помощ (1/3 от ширината) */}
           <aside className="space-y-6 animate-in fade-in duration-500 delay-300">
-            <div className="flex items-center gap-3 pb-1 border-b border-gray-100">
-              <Bot className="w-5 h-5 text-gray-400" />
-              <h3 className="text-lg font-semibold text-gray-800">Как работи?</h3>
+            <div className="flex items-center gap-3 pb-1 border-b border-gray-200 dark:border-gray-800">
+              <Bot className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Как работи?</h3>
             </div>
-            
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="bg-blue-100 text-blue-600 p-2 rounded-lg mt-1 flex-shrink-0">1</div>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  <strong className="text-gray-800">Качете PDF:</strong> Използвайте полето най-горе, за да добавите вашия файл. Той ще бъде анализиран и векторизиран.
-                </p>
-              </div>
-              
-              <div className="flex items-start gap-3">
-                <div className="bg-blue-100 text-blue-600 p-2 rounded-lg mt-1 flex-shrink-0">2</div>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  <strong className="text-gray-800">Изберете файл:</strong> В чата вдясно, изберете конкретен документ от падащото меню или оставете "Всички".
-                </p>
-              </div>
 
+            <div className="bg-white dark:bg-[#111827] p-6 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm space-y-4 transition-colors duration-300">
               <div className="flex items-start gap-3">
-                <div className="bg-blue-100 text-blue-600 p-2 rounded-lg mt-1 flex-shrink-0">3</div>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  <strong className="text-gray-800">Задайте въпрос:</strong> Пишете в полето и Llama 3 ще ви отговори, базирайки се *само* на качената информация.
+                <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-2 rounded-lg mt-1 flex-shrink-0">1</div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                  <strong className="text-gray-800 dark:text-gray-200">Качете PDF, DOCX, TXT, CSV:</strong> Системата ще го прочете и векторизира.
+                </p>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-2 rounded-lg mt-1 flex-shrink-0">2</div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                  <strong className="text-gray-800 dark:text-gray-200">Задайте въпрос:</strong> Можете да пишете или да говорите на микрофона.
+                </p>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-2 rounded-lg mt-1 flex-shrink-0">3</div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                  <strong className="text-gray-800 dark:text-gray-200">Умен отговор:</strong> Изкуственият интелект Llama 3 ще анализира вашите документи и ще ви отговори с точни цитати.
                 </p>
               </div>
             </div>
 
-            <div className="bg-gray-900 text-gray-100 p-6 rounded-2xl shadow-xl space-y-3">
+            <div className="bg-gray-900 dark:bg-blue-950/40 text-gray-100 p-6 rounded-2xl shadow-xl dark:border dark:border-blue-900/30 space-y-3">
               <h4 className="font-bold text-white flex items-center gap-2">
-                <Zap className="w-4 h-4 text-yellow-400" />
-                Бърз съвет
+                <Zap className="w-4 h-4 text-yellow-400" /> PRO Съвет
               </h4>
-              <p className="text-xs text-gray-400 leading-relaxed">
-                За най-добри резултати, задавайте конкретни въпроси. Можете да сменяте "личността" на асистента от падащото меню, за да получите по-прост или по-детайлен отговор.
+              <p className="text-xs text-gray-400 dark:text-blue-200/70 leading-relaxed">
+                Използвайте бутоните за "Флашкарти" и "Тест", за да генерирате автоматични материали за учене от вашите лекции!
               </p>
             </div>
           </aside>
-          
         </section>
       </main>
 
-      {/* 3. ФУТЪР */}
-      <footer className="mt-16 border-t border-gray-100 bg-white">
-        <div className="max-w-7xl mx-auto px-6 py-6 text-center text-sm text-gray-500">
-          Дипломна работа © 2024 • Интелигентен RAG Асистент
+      {/* 3. FOOTER */}
+      <footer className="mt-16 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-[#111827] transition-colors duration-300">
+        <div className="max-w-7xl mx-auto px-6 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+          © 2026 Интелигентен RAG Асистент
         </div>
       </footer>
-
     </div>
   );
 }

@@ -4,7 +4,7 @@ from typing import Dict
 from app.services.document_service import process_and_store_document
 from app.services.vector_service import embedding_model, CHROMA_PATH
 from langchain_chroma import Chroma
-from app.services.rag_service import clear_bm25_cache
+from app.services.rag_service import clear_bm25_cache, generate_document_summary
 router = APIRouter()
 
 # --- 1. МЕНИДЖЪР ЗА WEBSOCKETS ---
@@ -103,3 +103,12 @@ async def delete_document(filename: str):
         return {"message": f"Документът {filename} беше изтрит напълно."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Грешка при изтриване: {str(e)}")
+    
+@router.get("/summary/{filename}")
+async def get_document_summary(filename: str):
+    try:
+        # Извикваме функцията от rag_service
+        summary = generate_document_summary(filename)
+        return {"summary": summary}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

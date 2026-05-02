@@ -1,6 +1,5 @@
 /* eslint-disable no-unused-vars */
 import { useState, useRef, useEffect } from "react";
-import { flushSync } from "react-dom";
 import {
   Send,
   User,
@@ -31,12 +30,10 @@ import FlashcardList from "./FlashcardList";
 import QuizInterface from "./QuizInterface";
 
 export default function ChatInterface({ refreshDocs }) {
-  // --- НОВИ ЩАТИ ЗА БАЗАТА ДАННИ И МЕНЮТО ---
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Съобщенията вече стартират като празен масив (ще се зареждат от базата)
   const [messages, setMessages] = useState([]);
   const [streamingMessage, setStreamingMessage] = useState(null);
 
@@ -79,14 +76,14 @@ export default function ChatInterface({ refreshDocs }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-  const UPLOADS_URL = import.meta.env.VITE_UPLOADS_URL || 'http://localhost:8000/uploads';
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+  const UPLOADS_URL =
+    import.meta.env.VITE_UPLOADS_URL || "http://localhost:8000/uploads";
 
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading, streamingMessage]);
 
-  // --- ИЗТЕГЛЯНЕ НА СЕСИИТЕ ОТ БЕКЕНДА ПРИ ЗАРЕЖДАНЕ ---
   useEffect(() => {
     fetchSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -112,9 +109,7 @@ export default function ChatInterface({ refreshDocs }) {
     setCurrentSessionId(id);
     setMessages([]);
     try {
-      const res = await fetch(
-        `${API_URL}/chat/sessions/${id}/messages`,
-      );
+      const res = await fetch(`${API_URL}/chat/sessions/${id}/messages`);
       const data = await res.json();
       const formatted = data.map((m) => ({
         role: m.role,
@@ -148,7 +143,7 @@ export default function ChatInterface({ refreshDocs }) {
       return;
 
     try {
-      await fetch(`${API_URL}/chat/sessions${id}`, {
+      await fetch(`${API_URL}/chat/sessions/${id}`, {
         method: "DELETE",
       });
       const updated = sessions.filter((s) => s.id !== id);
@@ -163,7 +158,6 @@ export default function ChatInterface({ refreshDocs }) {
     }
   };
 
-  // --- ИНИЦИАЛИЗАЦИЯ НА МИКРОФОНА (Speech-to-Text) ---
   useEffect(() => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -207,7 +201,6 @@ export default function ChatInterface({ refreshDocs }) {
     }
   };
 
-  // --- ЧЕТЕНЕ НА ГЛАС (Text-to-Speech) ---
   const handleSpeak = (text) => {
     if (!("speechSynthesis" in window)) {
       alert("Браузърът ви не поддържа четене на глас.");
@@ -232,7 +225,6 @@ export default function ChatInterface({ refreshDocs }) {
     window.speechSynthesis.speak(utterance);
   };
 
-  // --- ИЗТЕГЛЯНЕ НА ДОКУМЕНТИ ---
   useEffect(() => {
     const fetchDocs = async () => {
       try {
@@ -337,18 +329,6 @@ export default function ChatInterface({ refreshDocs }) {
     }
   };
 
-  const handleClearChat = () => {
-    if (
-      window.confirm(
-        "Сигурни ли сте, че искате да изчистите историята на чата?",
-      )
-    ) {
-      setMessages([]);
-      // Тук можете да добавите и логика за изтриване на сесията,
-      // но засега само изчистваме екрана.
-    }
-  };
-
   const handleFollowUpClick = (question) => {
     setInput(question);
     setTimeout(() => {
@@ -396,7 +376,7 @@ export default function ChatInterface({ refreshDocs }) {
           chat_history: historyToPass,
           filename: selectedDoc !== "all" ? selectedDoc : null,
           persona: persona,
-          session_id: currentSessionId, // ДОБАВЕНО: Изпращане на session_id
+          session_id: currentSessionId,
         }),
       });
 
@@ -406,6 +386,7 @@ export default function ChatInterface({ refreshDocs }) {
       const decoder = new TextDecoder("utf-8");
       let fullText = "";
 
+      // ЧЕТЕНЕ ОТ СТРИЙМА С МИКРО-ПАУЗА ЗА РЕНДЕРИРАНЕ
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -418,12 +399,26 @@ export default function ChatInterface({ refreshDocs }) {
           displayContent = fullText.substring(0, sourceIndex);
         }
 
-        flushSync(() => {
-          setStreamingMessage((prev) => ({
-            ...prev,
-            content: displayContent,
-          }));
+        // Обновяваме щатата директно
+        setStreamingMessage({
+          role: "assistant",
+          content: displayContent,
+          sources: [],
+          followUps: [],
         });
+
+        // 🛑 ТАЙНАТА СЪСТАВКА: Микро-пауза от 15 милисекунди!
+        // Това принуждава React 18 да пренарисува екрана ВЕДНАГА (пишеща машина), вместо да групира всичко за накрая.
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      }
+
+      // ФИНАЛНА ОБРАБОТКА (СЛЕД КАТО ПРИКЛЮЧИ СТРИЙМЪТ)
+      let finalDisplay = fullText;
+      if (fullText.includes("\n\n===SOURCES===")) {
+        finalDisplay = fullText.substring(
+          0,
+          fullText.indexOf("\n\n===SOURCES==="),
+        );
       }
 
       let parsedSources = [];
@@ -451,15 +446,11 @@ export default function ChatInterface({ refreshDocs }) {
         }
       }
 
-      const finalContent = fullText.includes("\n\n===SOURCES===")
-        ? fullText.substring(0, fullText.indexOf("\n\n===SOURCES==="))
-        : fullText;
-
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: finalContent,
+          content: finalDisplay,
           sources: parsedSources,
           followUps: parsedFollowUps,
         },
@@ -467,7 +458,6 @@ export default function ChatInterface({ refreshDocs }) {
 
       setStreamingMessage(null);
 
-      // Обновяване на списъка със сесии (за да се обнови заглавието), ако това е първият въпрос
       if (isFirstMessage) {
         fetchSessions();
       }
@@ -487,7 +477,6 @@ export default function ChatInterface({ refreshDocs }) {
     }
   };
 
-  // Конфигурация за ReactMarkdown
   const markdownComponents = {
     p: ({ node, ...props }) => (
       <p className="mb-3 last:mb-0 leading-relaxed" {...props} />
@@ -500,17 +489,26 @@ export default function ChatInterface({ refreshDocs }) {
     ),
     li: ({ node, ...props }) => <li className="leading-relaxed" {...props} />,
     h1: ({ node, ...props }) => (
-      <h1 className="text-xl font-bold mb-3 mt-4 text-gray-900" {...props} />
+      <h1
+        className="text-xl font-bold mb-3 mt-4 text-gray-900 dark:text-gray-100"
+        {...props}
+      />
     ),
     h2: ({ node, ...props }) => (
-      <h2 className="text-lg font-bold mb-3 mt-4 text-gray-900" {...props} />
+      <h2
+        className="text-lg font-bold mb-3 mt-4 text-gray-900 dark:text-gray-100"
+        {...props}
+      />
     ),
     h3: ({ node, ...props }) => (
-      <h3 className="text-base font-bold mb-2 mt-3 text-gray-900" {...props} />
+      <h3
+        className="text-base font-bold mb-2 mt-3 text-gray-900 dark:text-gray-100"
+        {...props}
+      />
     ),
     a: ({ node, ...props }) => (
       <a
-        className="text-blue-600 hover:underline font-medium"
+        className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
         target="_blank"
         rel="noopener noreferrer"
         {...props}
@@ -519,7 +517,7 @@ export default function ChatInterface({ refreshDocs }) {
     code: ({ node, inline, children, ...props }) =>
       inline ? (
         <code
-          className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded-md font-mono text-[13px] border border-gray-200"
+          className="bg-gray-100 dark:bg-gray-800 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded-md font-mono text-[13px] border border-gray-200 dark:border-gray-700"
           {...props}
         >
           {children}
@@ -533,45 +531,48 @@ export default function ChatInterface({ refreshDocs }) {
       ),
     blockquote: ({ node, ...props }) => (
       <blockquote
-        className="border-l-4 border-blue-400 pl-4 py-1 italic text-gray-500 my-4 bg-blue-50/50 rounded-r-lg"
+        className="border-l-4 border-blue-400 dark:border-blue-500 pl-4 py-1 italic text-gray-500 dark:text-gray-400 my-4 bg-blue-50/50 dark:bg-blue-900/20 rounded-r-lg"
         {...props}
       />
     ),
     strong: ({ node, ...props }) => (
-      <strong className="font-semibold text-gray-900" {...props} />
+      <strong
+        className="font-semibold text-gray-900 dark:text-gray-100"
+        {...props}
+      />
     ),
     table: ({ node, ...props }) => (
       <div className="overflow-x-auto mb-4">
         <table
-          className="min-w-full divide-y divide-gray-300 border border-gray-200 rounded-lg"
+          className="min-w-full divide-y divide-gray-300 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg"
           {...props}
         />
       </div>
     ),
     th: ({ node, ...props }) => (
       <th
-        className="bg-gray-50 px-3 py-2 text-left text-sm font-semibold text-gray-900 border-b border-gray-200"
+        className="bg-gray-50 dark:bg-gray-800 px-3 py-2 text-left text-sm font-semibold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-700"
         {...props}
       />
     ),
     td: ({ node, ...props }) => (
       <td
-        className="px-3 py-2 text-sm text-gray-600 border-b border-gray-200"
+        className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700"
         {...props}
       />
     ),
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex h-[600px] overflow-hidden relative">
+    <div className="bg-white dark:bg-[#111827] rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 flex h-[600px] overflow-hidden relative transition-colors duration-300">
       {/* СТРАНИЧНО МЕНЮ (SIDEBAR) */}
       <div
-        className={`${isSidebarOpen ? "w-64" : "w-0"} transition-all duration-300 flex-shrink-0 bg-gray-50 border-r border-gray-200 flex flex-col overflow-hidden z-20`}
+        className={`${isSidebarOpen ? "w-64" : "w-0"} transition-all duration-300 flex-shrink-0 bg-gray-50 dark:bg-[#0B0F19] border-r border-gray-200 dark:border-gray-800 flex flex-col overflow-hidden z-20`}
       >
         <div className="p-4">
           <button
             onClick={handleNewChat}
-            className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            className="w-full flex items-center justify-center gap-2 bg-blue-600 dark:bg-blue-500 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors font-medium"
           >
             <Plus className="w-4 h-4" /> Нов разговор
           </button>
@@ -582,7 +583,7 @@ export default function ChatInterface({ refreshDocs }) {
             <div
               key={session.id}
               onClick={() => loadSessionMessages(session.id)}
-              className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors group ${currentSessionId === session.id ? "bg-blue-100 text-blue-800" : "hover:bg-gray-200 text-gray-700"}`}
+              className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors group ${currentSessionId === session.id ? "bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300" : "hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-400"}`}
             >
               <div className="flex items-center gap-2 overflow-hidden">
                 <MessageSquare className="w-4 h-4 flex-shrink-0 opacity-60" />
@@ -592,7 +593,7 @@ export default function ChatInterface({ refreshDocs }) {
               </div>
               <button
                 onClick={(e) => handleDeleteSession(e, session.id)}
-                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 rounded transition-all"
+                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 rounded transition-all"
                 title="Изтрий"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -603,39 +604,28 @@ export default function ChatInterface({ refreshDocs }) {
       </div>
 
       {/* ОСНОВНА ЧАСТ НА ЧАТА */}
-      <div className="flex flex-col flex-1 h-full min-w-0 relative">
+      <div className="flex flex-col flex-1 h-full min-w-0 relative bg-white dark:bg-[#111827] transition-colors duration-300">
         {/* ХЕДЪР НА ЧАТА */}
-        <div className="p-3 sm:p-4 border-b border-gray-100 bg-white flex flex-wrap justify-between items-center gap-3">
+        <div className="p-3 sm:p-4 border-b border-gray-100 dark:border-gray-800 flex flex-wrap justify-between items-center gap-3">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 -ml-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
               title="Покажи/Скрий менюто"
             >
               <Menu className="w-5 h-5" />
             </button>
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center hidden sm:flex">
-              <Bot className="w-5 h-5 mr-2 text-blue-600" />
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center hidden sm:flex">
+              <Bot className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-500" />
               Асистент
             </h2>
-
-            {messages.length > 0 && (
-              <button
-                onClick={handleClearChat}
-                className="text-xs flex items-center gap-1 text-gray-500 hover:text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors hidden md:flex"
-                title="Изчисти екрана"
-              >
-                <Eraser className="w-3.5 h-3.5" />
-                Изчисти
-              </button>
-            )}
           </div>
 
           <div className="flex gap-2 items-center flex-wrap">
             <button
               onClick={handleGenerateQuiz}
               disabled={isGeneratingQuiz || availableDocs.length === 0}
-              className="flex items-center text-sm font-medium bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg hover:bg-indigo-200 transition-colors disabled:opacity-50"
+              className="flex items-center text-sm font-medium bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 px-3 py-2 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-500/30 transition-colors disabled:opacity-50"
             >
               {isGeneratingQuiz ? (
                 <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
@@ -647,7 +637,7 @@ export default function ChatInterface({ refreshDocs }) {
             <button
               onClick={handleGenerateCards}
               disabled={isGeneratingCards || availableDocs.length === 0}
-              className="flex items-center text-sm font-medium bg-purple-100 text-purple-700 px-3 py-2 rounded-lg hover:bg-purple-200 transition-colors disabled:opacity-50"
+              className="flex items-center text-sm font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 px-3 py-2 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-500/30 transition-colors disabled:opacity-50"
             >
               {isGeneratingCards ? (
                 <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
@@ -660,7 +650,7 @@ export default function ChatInterface({ refreshDocs }) {
             <select
               value={persona}
               onChange={(e) => setPersona(e.target.value)}
-              className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-blue-500 block p-2 outline-none shadow-sm cursor-pointer hidden md:block"
+              className="bg-gray-50 dark:bg-[#0B0F19] border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg focus:ring-blue-500 block p-2 outline-none shadow-sm cursor-pointer hidden md:block"
             >
               <option value="default">Стандартен стил</option>
               <option value="simple">Като на 10-годишен</option>
@@ -668,11 +658,11 @@ export default function ChatInterface({ refreshDocs }) {
               <option value="bullet_points">Само кратки списъци</option>
             </select>
 
-            <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-lg shadow-sm pr-1">
+            <div className="flex items-center gap-1 bg-gray-50 dark:bg-[#0B0F19] border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm pr-1">
               <select
                 value={selectedDoc}
                 onChange={(e) => setSelectedDoc(e.target.value)}
-                className="text-gray-700 text-sm bg-transparent focus:ring-0 focus:outline-none block p-2 cursor-pointer max-w-[100px] md:max-w-[150px] truncate border-none"
+                className="text-gray-700 dark:text-gray-300 text-sm bg-transparent focus:ring-0 focus:outline-none block p-2 cursor-pointer max-w-[100px] md:max-w-[150px] truncate border-none"
               >
                 <option value="all">Всички документи</option>
                 {availableDocs.map((doc, idx) => (
@@ -683,10 +673,10 @@ export default function ChatInterface({ refreshDocs }) {
               </select>
 
               {selectedDoc !== "all" && (
-                <div className="flex items-center border-l border-gray-200 pl-1">
+                <div className="flex items-center border-l border-gray-200 dark:border-gray-700 pl-1">
                   <button
                     onClick={handleGetSummary}
-                    className="p-1.5 text-blue-500 hover:bg-blue-100 rounded-md transition-colors"
+                    className="p-1.5 text-blue-500 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-md transition-colors"
                     title="AI Резюме"
                   >
                     <Lightbulb className="w-4 h-4" />
@@ -694,7 +684,7 @@ export default function ChatInterface({ refreshDocs }) {
                   <button
                     onClick={handleDeleteDocument}
                     disabled={isDeleting}
-                    className="p-1.5 text-red-400 hover:bg-red-100 rounded-md transition-colors disabled:opacity-50"
+                    className="p-1.5 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-md transition-colors disabled:opacity-50"
                     title="Изтрий"
                   >
                     {isDeleting ? (
@@ -723,31 +713,31 @@ export default function ChatInterface({ refreshDocs }) {
         )}
 
         {summaryData.isOpen && (
-          <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-50 flex flex-col rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-4 border-b flex justify-between items-center bg-blue-50/50">
-              <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                <Lightbulb className="w-5 h-5 text-blue-600" /> Резюме:{" "}
-                {selectedDoc}
+          <div className="absolute inset-0 bg-white/95 dark:bg-[#1E293B]/95 backdrop-blur-sm z-50 flex flex-col rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-blue-50/50 dark:bg-[#111827]">
+              <h3 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                <Lightbulb className="w-5 h-5 text-blue-600 dark:text-blue-400" />{" "}
+                Резюме: {selectedDoc}
               </h3>
               <button
                 onClick={() =>
                   setSummaryData({ ...summaryData, isOpen: false })
                 }
-                className="p-1 hover:bg-gray-200 rounded-full transition-colors"
+                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors"
               >
-                <X className="w-5 h-5 text-gray-500" />
+                <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
             <div className="p-6 overflow-y-auto flex-1">
               {summaryData.isLoading ? (
-                <div className="flex flex-col items-center justify-center h-full space-y-4 text-gray-500">
-                  <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
+                <div className="flex flex-col items-center justify-center h-full space-y-4 text-gray-500 dark:text-gray-400">
+                  <Loader2 className="w-10 h-10 animate-spin text-blue-500 dark:text-blue-400" />
                   <p className="animate-pulse font-medium">
                     Анализиране и синтезиране на текста...
                   </p>
                 </div>
               ) : (
-                <div className="prose prose-blue max-w-none text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                <div className="prose prose-blue dark:prose-invert max-w-none text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
                   {summaryData.text}
                 </div>
               )}
@@ -756,9 +746,9 @@ export default function ChatInterface({ refreshDocs }) {
         )}
 
         {/* ЗОНА ЗА СЪОБЩЕНИЯ */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-white">
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {messages.length === 0 && !streamingMessage ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+            <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-600">
               <Bot className="w-12 h-12 mb-3 opacity-20" />
               <p>Това е началото на разговора.</p>
             </div>
@@ -770,13 +760,7 @@ export default function ChatInterface({ refreshDocs }) {
                   className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""} animate-in fade-in slide-in-from-bottom-2 duration-300`}
                 >
                   <div
-                    className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                      msg.role === "user"
-                        ? "bg-blue-100 text-blue-600"
-                        : msg.isError
-                          ? "bg-red-100 text-red-600"
-                          : "bg-green-100 text-green-600"
-                    }`}
+                    className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${msg.role === "user" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400" : msg.isError ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400" : "bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400"}`}
                   >
                     {msg.role === "user" ? (
                       <User className="w-5 h-5" />
@@ -786,16 +770,16 @@ export default function ChatInterface({ refreshDocs }) {
                   </div>
 
                   <div
-                    className={`max-w-[85%] overflow-x-auto ${msg.role === "user" ? "bg-blue-600 text-white rounded-2xl rounded-tr-none" : "bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-none shadow-sm"} p-4`}
+                    className={`max-w-[85%] overflow-x-auto ${msg.role === "user" ? "bg-blue-600 dark:bg-blue-500 text-white rounded-2xl rounded-tr-none" : "bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-2xl rounded-tl-none shadow-sm"} p-4`}
                   >
                     {msg.role === "user" ? (
                       <div className="whitespace-pre-wrap">{msg.content}</div>
                     ) : msg.isError ? (
-                      <div className="text-red-600 whitespace-pre-wrap font-medium">
+                      <div className="text-red-600 dark:text-red-400 whitespace-pre-wrap font-medium">
                         {msg.content}
                       </div>
                     ) : (
-                      <div className="text-sm md:text-base text-gray-700 relative">
+                      <div className="text-sm md:text-base text-gray-700 dark:text-gray-300 relative">
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
                           components={markdownComponents}
@@ -806,7 +790,7 @@ export default function ChatInterface({ refreshDocs }) {
                         <div className="mt-3 pt-2 flex justify-end gap-2">
                           <button
                             onClick={() => handleSpeak(msg.content)}
-                            className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 hover:bg-blue-100 px-2 py-1.5 rounded-md border border-blue-100"
+                            className="flex items-center text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-2 py-1.5 rounded-md border border-blue-100 dark:border-blue-800/50"
                           >
                             {isSpeaking ? (
                               <>
@@ -822,19 +806,18 @@ export default function ChatInterface({ refreshDocs }) {
                           </button>
                           <button
                             onClick={() => handleCopy(msg.content, index)}
-                            className="flex items-center text-xs text-gray-500 hover:text-gray-800 transition-colors bg-gray-50 hover:bg-gray-100 px-2 py-1.5 rounded-md border border-gray-100"
+                            className="flex items-center text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors bg-gray-50 dark:bg-[#0B0F19] hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1.5 rounded-md border border-gray-100 dark:border-gray-700"
                           >
                             {copiedIndex === index ? (
                               <>
-                                <Check className="w-3.5 h-3.5 mr-1.5 text-green-600" />
-                                <span className="text-green-600 font-medium">
+                                <Check className="w-3.5 h-3.5 mr-1.5 text-green-600 dark:text-green-400" />
+                                <span className="text-green-600 dark:text-green-400 font-medium">
                                   Копирано
                                 </span>
                               </>
                             ) : (
                               <>
-                                <Copy className="w-3.5 h-3.5 mr-1.5" />
-                                Копирай
+                                <Copy className="w-3.5 h-3.5 mr-1.5" /> Копирай
                               </>
                             )}
                           </button>
@@ -843,8 +826,8 @@ export default function ChatInterface({ refreshDocs }) {
                     )}
 
                     {msg.sources && msg.sources.length > 0 && !msg.isError && (
-                      <div className="mt-4 pt-3 border-t border-gray-200">
-                        <p className="text-xs font-semibold flex items-center mb-2 text-gray-600">
+                      <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                        <p className="text-xs font-semibold flex items-center mb-2 text-gray-600 dark:text-gray-400">
                           <BookOpen className="w-3 h-3 mr-1" /> Източници
                           (Кликнете за преглед):
                         </p>
@@ -853,13 +836,12 @@ export default function ChatInterface({ refreshDocs }) {
                             <button
                               key={idx}
                               onClick={() => {
-                                // Само PDF файлове поддържат превъртане до страница чрез браузъра
                                 if (
                                   source.filename.toLowerCase().endsWith(".pdf")
                                 ) {
                                   setPdfViewer({
                                     isOpen: true,
-                                   url: `${UPLOADS_URL}/${source.filename}#page=${source.page}`,
+                                    url: `${UPLOADS_URL}/${encodeURIComponent(source.filename)}#page=${source.page}`,
                                     title: `${source.filename} - Страница ${source.page}`,
                                   });
                                 } else {
@@ -868,15 +850,15 @@ export default function ChatInterface({ refreshDocs }) {
                                   );
                                 }
                               }}
-                              className="w-full text-left bg-gray-50 p-3 rounded-lg text-xs text-gray-600 border border-gray-200 hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm transition-all group"
+                              className="w-full text-left bg-gray-50 dark:bg-[#0B0F19] p-3 rounded-lg text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all group"
                             >
-                              <span className="font-semibold text-blue-700 block mb-1 group-hover:text-blue-800 flex items-center">
+                              <span className="font-semibold text-blue-700 dark:text-blue-400 block mb-1 group-hover:text-blue-800 dark:group-hover:text-blue-300 flex items-center">
                                 📄 Страница {source.page}{" "}
-                                <span className="text-gray-400 font-normal ml-2 truncate">
+                                <span className="text-gray-400 dark:text-gray-500 font-normal ml-2 truncate">
                                   ({source.filename})
                                 </span>
                               </span>
-                              <p className="line-clamp-2 italic text-gray-600 group-hover:text-gray-800">
+                              <p className="line-clamp-2 italic text-gray-600 dark:text-gray-400 group-hover:text-gray-800 dark:group-hover:text-gray-200">
                                 "{source.content}"
                               </p>
                             </button>
@@ -884,12 +866,13 @@ export default function ChatInterface({ refreshDocs }) {
                         </div>
                       </div>
                     )}
+
                     {msg.followUps &&
                       msg.followUps.length > 0 &&
                       !isLoading &&
                       index === messages.length - 1 && (
-                        <div className="mt-4 pt-3 border-t border-gray-200">
-                          <p className="text-xs font-semibold flex items-center mb-2 text-gray-500 uppercase tracking-wider">
+                        <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <p className="text-xs font-semibold flex items-center mb-2 text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                             <MessageSquarePlus className="w-3 h-3 mr-1" /> Може
                             би искате да попитате:
                           </p>
@@ -898,7 +881,7 @@ export default function ChatInterface({ refreshDocs }) {
                               <button
                                 key={idx}
                                 onClick={() => handleFollowUpClick(q)}
-                                className="text-left text-xs px-3 py-2 bg-blue-50/50 border border-blue-100 text-blue-700 hover:bg-blue-100 hover:border-blue-200 transition-all rounded-lg font-medium"
+                                className="text-left text-xs px-3 py-2 bg-blue-50/50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-all rounded-lg font-medium"
                               >
                                 {q}
                               </button>
@@ -912,19 +895,15 @@ export default function ChatInterface({ refreshDocs }) {
 
               {streamingMessage && (
                 <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-green-100 text-green-600">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400">
                     <Bot className="w-5 h-5" />
                   </div>
-
-                  <div className="max-w-[80%] overflow-x-auto bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-none shadow-sm p-4">
-                    <div className="text-sm md:text-base text-gray-700 relative">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={markdownComponents}
-                      >
+                  <div className="max-w-[80%] overflow-x-auto bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-2xl rounded-tl-none shadow-sm p-4">
+                    <div className="text-sm md:text-base text-gray-700 dark:text-gray-300 relative">
+                      <div className="whitespace-pre-wrap font-sans">
                         {streamingMessage.content}
-                      </ReactMarkdown>
-                      <span className="inline-block w-1.5 h-4 ml-1 bg-blue-500 animate-pulse"></span>
+                        <span className="inline-block w-1.5 h-4 ml-1 bg-blue-500 animate-pulse"></span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -934,12 +913,12 @@ export default function ChatInterface({ refreshDocs }) {
 
           {isLoading && !streamingMessage && (
             <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 flex items-center justify-center">
                 <Bot className="w-5 h-5" />
               </div>
-              <div className="bg-gray-100 text-gray-800 rounded-2xl rounded-tl-none p-4 flex items-center">
-                <Loader2 className="w-5 h-5 animate-spin text-gray-500 mr-2" />
-                <span className="text-gray-500 text-sm">
+              <div className="bg-gray-100 dark:bg-[#1E293B] text-gray-800 dark:text-gray-200 rounded-2xl rounded-tl-none p-4 flex items-center">
+                <Loader2 className="w-5 h-5 animate-spin text-gray-500 dark:text-gray-400 mr-2" />
+                <span className="text-gray-500 dark:text-gray-400 text-sm">
                   Генериране на отговор...
                 </span>
               </div>
@@ -951,17 +930,13 @@ export default function ChatInterface({ refreshDocs }) {
         <form
           id="chat-form"
           onSubmit={handleSubmit}
-          className="p-4 bg-white border-t border-gray-100 z-10"
+          className="p-4 bg-white dark:bg-[#111827] border-t border-gray-100 dark:border-gray-800 z-10 transition-colors duration-300"
         >
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={toggleListening}
-              className={`p-3 rounded-lg flex-shrink-0 transition-colors ${
-                isListening
-                  ? "bg-red-500 text-white animate-pulse"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
+              className={`p-3 rounded-lg flex-shrink-0 transition-colors ${isListening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
               title={isListening ? "Спри микрофона" : "Говори"}
             >
               {isListening ? (
@@ -970,14 +945,13 @@ export default function ChatInterface({ refreshDocs }) {
                 <Mic className="w-5 h-5" />
               )}
             </button>
-
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={isListening ? "Слушам ви..." : "Попитайте нещо..."}
               disabled={isLoading}
-              className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-50"
+              className="flex-1 bg-gray-50 dark:bg-[#0B0F19] border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-50"
             />
             <button
               type="submit"
@@ -989,24 +963,30 @@ export default function ChatInterface({ refreshDocs }) {
           </div>
         </form>
       </div>
+
       {/* PDF VIEWER MODAL */}
       {pdfViewer.isOpen && (
-        <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full h-full max-w-6xl flex flex-col overflow-hidden border border-gray-200">
-            <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-              <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-blue-600" />
+        <div className="absolute inset-0 bg-gray-900/40 dark:bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-2xl w-full h-full max-w-6xl flex flex-col overflow-hidden border border-gray-200 dark:border-gray-700">
+            <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-[#111827]">
+              <h3 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 {pdfViewer.title}
               </h3>
-              <button onClick={() => setPdfViewer({ isOpen: false, url: '', title: '' })} className="p-1.5 hover:bg-gray-200 rounded-full transition-colors">
-                <X className="w-5 h-5 text-gray-500" />
+              <button
+                onClick={() =>
+                  setPdfViewer({ isOpen: false, url: "", title: "" })
+                }
+                className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
-            <div className="flex-1 bg-gray-200 p-2">
-              <iframe 
-                src={pdfViewer.url} 
-                className="w-full h-full rounded-xl border border-gray-300 shadow-inner bg-white" 
-                title="PDF Viewer" 
+            <div className="flex-1 bg-gray-200 dark:bg-gray-900 p-2">
+              <iframe
+                src={pdfViewer.url}
+                className="w-full h-full rounded-xl border border-gray-300 dark:border-gray-800 bg-white"
+                title="PDF Viewer"
               />
             </div>
           </div>
