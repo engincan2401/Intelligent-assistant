@@ -7,7 +7,6 @@ from langchain_chroma import Chroma
 from app.services.rag_service import clear_bm25_cache, generate_document_summary
 router = APIRouter()
 
-# --- 1. МЕНИДЖЪР ЗА WEBSOCKETS ---
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
@@ -34,16 +33,14 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
     await manager.connect(websocket, client_id)
     try:
         while True:
-            # Държим връзката отворена
             data = await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(client_id)
 
-# --- 2. ОБНОВЕН UPLOAD ENDPOINT ---
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...), 
-    client_id: str = Form(None) # Приемаме клиентското ID
+    client_id: str = Form(None) 
 ):
     file_extension = os.path.splitext(file.filename)[1].lower()
     allowed_extensions = [".pdf", ".docx", ".txt", ".csv"]
@@ -55,7 +52,6 @@ async def upload_document(
         )
 
     try:
-        # Подаваме client_id и manager-а към сървиса, за да може той да изпраща прогреса!
         result = await process_and_store_document(file, client_id, manager)
         return result
     except Exception as e:
@@ -83,7 +79,6 @@ async def list_documents():
 @router.delete("/delete/{filename}")
 async def delete_document(filename: str):
     try:
-        # 1. Изтриване на векторите от ChromaDB
         db = Chroma(
             persist_directory=CHROMA_PATH,
             embedding_function=embedding_model,
@@ -91,13 +86,11 @@ async def delete_document(filename: str):
         )
         db.delete(where={"filename": filename})
 
-        # 2. Изтриване на физическия файл от папката uploads/
         file_path = os.path.join("uploads", filename)
         if os.path.exists(file_path):
             os.remove(file_path)
             print(f"🗑️ Физическият файл {filename} е изтрит от сървъра.")
 
-        # 3. Изчистване на BM25 кеша в паметта
         clear_bm25_cache(filename)
 
         return {"message": f"Документът {filename} беше изтрит напълно."}
@@ -107,7 +100,6 @@ async def delete_document(filename: str):
 @router.get("/summary/{filename}")
 async def get_document_summary(filename: str):
     try:
-        # Извикваме функцията от rag_service
         summary = generate_document_summary(filename)
         return {"summary": summary}
     except Exception as e:

@@ -386,7 +386,6 @@ export default function ChatInterface({ refreshDocs }) {
       const decoder = new TextDecoder("utf-8");
       let fullText = "";
 
-      // ЧЕТЕНЕ ОТ СТРИЙМА С МИКРО-ПАУЗА ЗА РЕНДЕРИРАНЕ
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -399,7 +398,6 @@ export default function ChatInterface({ refreshDocs }) {
           displayContent = fullText.substring(0, sourceIndex);
         }
 
-        // Обновяваме щатата директно
         setStreamingMessage({
           role: "assistant",
           content: displayContent,
@@ -407,12 +405,10 @@ export default function ChatInterface({ refreshDocs }) {
           followUps: [],
         });
 
-        // 🛑 ТАЙНАТА СЪСТАВКА: Микро-пауза от 15 милисекунди!
-        // Това принуждава React 18 да пренарисува екрана ВЕДНАГА (пишеща машина), вместо да групира всичко за накрая.
+        
         await new Promise((resolve) => setTimeout(resolve, 15));
       }
 
-      // ФИНАЛНА ОБРАБОТКА (СЛЕД КАТО ПРИКЛЮЧИ СТРИЙМЪТ)
       let finalDisplay = fullText;
       if (fullText.includes("\n\n===SOURCES===")) {
         finalDisplay = fullText.substring(
@@ -565,7 +561,6 @@ export default function ChatInterface({ refreshDocs }) {
 
   return (
     <div className="bg-white dark:bg-[#111827] rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 flex h-[600px] overflow-hidden relative transition-colors duration-300">
-      {/* СТРАНИЧНО МЕНЮ (SIDEBAR) */}
       <div
         className={`${isSidebarOpen ? "w-64" : "w-0"} transition-all duration-300 flex-shrink-0 bg-gray-50 dark:bg-[#0B0F19] border-r border-gray-200 dark:border-gray-800 flex flex-col overflow-hidden z-20`}
       >
@@ -603,9 +598,7 @@ export default function ChatInterface({ refreshDocs }) {
         </div>
       </div>
 
-      {/* ОСНОВНА ЧАСТ НА ЧАТА */}
       <div className="flex flex-col flex-1 h-full min-w-0 relative bg-white dark:bg-[#111827] transition-colors duration-300">
-        {/* ХЕДЪР НА ЧАТА */}
         <div className="p-3 sm:p-4 border-b border-gray-100 dark:border-gray-800 flex flex-wrap justify-between items-center gap-3">
           <div className="flex items-center gap-3">
             <button
@@ -745,7 +738,6 @@ export default function ChatInterface({ refreshDocs }) {
           </div>
         )}
 
-        {/* ЗОНА ЗА СЪОБЩЕНИЯ */}
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {messages.length === 0 && !streamingMessage ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-600">
@@ -964,7 +956,6 @@ export default function ChatInterface({ refreshDocs }) {
         </form>
       </div>
 
-      {/* PDF VIEWER MODAL */}
       {pdfViewer.isOpen && (
         <div className="absolute inset-0 bg-gray-900/40 dark:bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-200">
           <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-2xl w-full h-full max-w-6xl flex flex-col overflow-hidden border border-gray-200 dark:border-gray-700">

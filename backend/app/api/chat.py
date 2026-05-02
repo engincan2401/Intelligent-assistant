@@ -42,14 +42,11 @@ async def create_quiz(request: QuizRequest):
         cleaned_questions = []
         
         for q in questions:
-            # 1. Проверката започва тук (с 1 таб / 4 интервала навътре)
             if "options" in q and isinstance(q["options"], list):
                 
-                # 2. Тези два реда трябва да са с 2 таба (8 интервала) навътре!
                 valid_options = [opt for opt in q["options"] if isinstance(opt, dict)]
                 q["options"] = valid_options[:4] 
                 
-            # 3. Този ред е извън if-а, но ВЪТРЕ в for цикъла (с 1 таб / 4 интервала навътре)
             cleaned_questions.append(q)
 
         
@@ -62,7 +59,6 @@ async def create_quiz(request: QuizRequest):
     
 @router.post("/sessions")
 def create_session(db: Session = Depends(get_db_session)):
-    """Създава нов празен чат"""
     new_session = ChatSession(title="Нов разговор")
     db.add(new_session)
     db.commit()
@@ -71,7 +67,6 @@ def create_session(db: Session = Depends(get_db_session)):
 
 @router.get("/sessions")
 def get_sessions(db: Session = Depends(get_db_session)):
-    """Връща списък с всички предишни разговори"""
     sessions = db.query(ChatSession).order_by(ChatSession.created_at.desc()).all()
     return [{"id": s.id, "title": s.title} for s in sessions]
 

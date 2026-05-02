@@ -36,7 +36,6 @@ def custom_hybrid_search(question: str, db, filename: str = None, k: int = 4):
     vector_docs = db.similarity_search(question, **search_kwargs)
     bm25_docs = []
     
-    # ДОБАВЕНО: Логика за кеширане
     global bm25_cache
     cache_key = filename if filename else "all"
 
@@ -50,10 +49,8 @@ def custom_hybrid_search(question: str, db, filename: str = None, k: int = 4):
                     meta = db_data["metadatas"][i] if db_data.get("metadatas") else {}
                     docs_for_bm25.append(Document(page_content=db_data["documents"][i], metadata=meta))
                 
-                # Изчисляваме го веднъж и го запазваме в кеша
                 bm25_cache[cache_key] = BM25Retriever.from_documents(docs_for_bm25)
         
-        # Използваме вече готовия индекс от кеша
         if cache_key in bm25_cache:
             bm25_retriever = bm25_cache[cache_key]
             bm25_retriever.k = k
@@ -103,17 +100,16 @@ async def needs_document_search(question: str) -> bool:
 Отговори САМО с 'YES' (ако трябва търсене в документи) или 'NO' (ако е общ разговор/поздрав). Никакви други думи!"""
     
     try:
-        # Използваме ainvoke за бърз синхронен отговор от модела
         response = await llm.ainvoke(router_prompt)
         answer = response.content.strip().upper()
         
-        # Ако моделът е върнал NO, значи не ни трябват документи
+        
         if "NO" in answer:
             return False
-        return True # Във всички останали случаи търсим в базата
+        return True 
     except Exception as e:
         print(f"Грешка в рутера: {e}")
-        return True # При грешка се презастраховаме и търсим в базата
+        return True #
 
 PERSONA_PROMPTS = {
     "default": """Ти си полезен AI асистент. 
@@ -157,9 +153,7 @@ PERSONA_PROMPTS = {
 Списък на български език:"""
 }
 
-# 2. ОБНОВЕНАТА ФУНКЦИЯ ЗА СТРИЙМИНГ
 async def stream_answer(question: str, chat_history: list, filename: str = None, persona: str = "default", session_id: int = None):
-   # 1. Питаме Рутера дали изобщо да търсим в базата
     should_search = await needs_document_search(question)
     
     docs = []
@@ -174,7 +168,6 @@ async def stream_answer(question: str, chat_history: list, filename: str = None,
         print("💬 Рутерът каза NO: Директен разговор (без база данни).")
         context_text = "Няма прикачен контекст. Това е общ разговор."
 
-    # Форматиране на историята
     history_text = ""
     if chat_history:
         for msg in chat_history:
@@ -183,8 +176,7 @@ async def stream_answer(question: str, chat_history: list, filename: str = None,
             role_name = "Потребител" if role == "user" else "Асистент"
             history_text += f"{role_name}: {content}\n"
 
-    # 3. ИЗБИРАМЕ ПРАВИЛНИЯ ПРОМПТ СПРЯМО ПЕРСОНАТА
-    # Ако фронтендът прати непозната персона, използваме "default"
+   
     raw_template = PERSONA_PROMPTS.get(persona, PERSONA_PROMPTS["default"])
     
     prompt = PromptTemplate(template=raw_template, input_variables=["context", "question", "history"])
@@ -192,17 +184,14 @@ async def stream_answer(question: str, chat_history: list, filename: str = None,
 
     full_response = ""
     
-    # Стрийминг към фронтенда (както го направихме преди)
     async for chunk in llm.astream(final_prompt):
         full_response += chunk.content
         yield chunk.content
 
-    # Добавяне на източници
     yield "\n\n===SOURCES===\n"
     sources_list = [{"content": doc.page_content, "page": doc.metadata.get("page", 0) + 1, "filename": doc.metadata.get("filename", "")} for doc in docs]
     yield json.dumps(sources_list)
 
-    # Добавяне на следващи въпроси
     yield "\n\n===FOLLOW_UPS===\n"
     follow_ups = generate_followups(question, full_response)
     yield json.dumps(follow_ups)
@@ -210,15 +199,12 @@ async def stream_answer(question: str, chat_history: list, filename: str = None,
     if session_id:
         db_session = SessionLocal()
         try:
-            # Записваме въпроса на потребителя
             user_msg = ChatMessage(session_id=session_id, role="user", content=question)
             db_session.add(user_msg)
             
-            # Записваме отговора на асистента
             assistant_msg = ChatMessage(session_id=session_id, role="assistant", content=full_response)
             db_session.add(assistant_msg)
             
-            # Обновяваме заглавието на чата (ако все още е "Нов разговор")
             chat_session = db_session.query(ChatSession).filter(ChatSession.id == session_id).first()
             if chat_session and chat_session.title == "Нов разговор":
                 chat_session.title = question[:30] + "..."
@@ -237,8 +223,7 @@ def generate_document_summary(filename: str):
         collection_name="diploma_documents"
     )
     
-    # Търсим части, които вероятно съдържат цели, резюмета или въведения
-    # Използваме по-голямо 'k', за да обхванем повече контекст
+    
     search_kwargs = {"k": 12}
     if filename and filename != "all":
         search_kwargs["filter"] = {"filename": filename}
@@ -280,11 +265,9 @@ def generate_flashcards(filename: str):
     if filename and filename != "all":
         search_kwargs["filter"] = {"filename": filename}
         
-    # ВАЖНО: Търсим с реални думи, а не с празен стринг " ", за да не крашнем ChromaDB
     docs = db.similarity_search("Основни концепции, термини, дефиниции и правила", **search_kwargs)
     context_text = "\n\n---\n\n".join([doc.page_content for doc in docs])
     
-    # ВАЖНО: Искаме обект, съдържащ масив, за да е съвместимо с format="json"
     prompt = f"""Ти си експертен AI учител. Твоята задача е да създадеш висококачествени флашкарти за учене.
     
     СТРИКТНИ ПРАВИЛА:
@@ -309,23 +292,19 @@ def generate_flashcards(filename: str):
     
     raw_text = response.content.strip()
     
-    # 1. Почистване на Markdown (ако моделът е върнал ```json ... ```)
     if raw_text.startswith("```"):
         raw_text = re.sub(r"^```(?:json)?\n", "", raw_text)
         raw_text = re.sub(r"\n```$", "", raw_text)
         raw_text = raw_text.strip()
         
-    # 2. Опит за парсване
     try:
         parsed_data = json.loads(raw_text)
         
-        # Навигация до същинския масив
         if isinstance(parsed_data, dict) and "flashcards" in parsed_data:
             return parsed_data["flashcards"]
         elif isinstance(parsed_data, list):
             return parsed_data
         else:
-            # Ако моделът си е измислил друг ключ (напр. "cards"), намираме първия масив
             for key, value in parsed_data.items():
                 if isinstance(value, list):
                     return value
@@ -412,7 +391,6 @@ def clear_bm25_cache(filename: str = None):
         del bm25_cache[filename]
         print(f"🧹 BM25 кешът за {filename} е изчистен.")
     
-    # Винаги изчистваме и кеша за "all", за да се преизчисли без изтрития файл
     if "all" in bm25_cache:
         del bm25_cache["all"]
         print("🧹 Общият BM25 кеш ('all') е нулиран.")
