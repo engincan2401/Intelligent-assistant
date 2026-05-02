@@ -34,24 +34,30 @@
 
 
 # 1. Влизане в папката на бекенда
+bash
 cd backend
 
 # 2. Създаване на виртуалната среда (ще създаде папка venv)
+bash
 python -m venv venv
 
 # 3. Активиране на виртуалната среда (задължително за Windows!)
+bash
 venv\Scripts\activate
 
 # 4. Инсталиране на всички нужни зависимости
+bash
 pip install -r requirements.txt
 
 
 ## Frontend
 
 # 1. Влизане в папката на фронтенда
+bash
 cd frontend
 
 # 2. Инсталиране на зависимостите
+bash
 npm install
 
 
@@ -66,12 +72,12 @@ npm install
 
 # Ръчно стартиране
 1. Терминал 1 (Бекенд):
-
+bash
 cd backend
 venv\Scripts\activate
-python main.py
+uvicorn app.main:app --reload
 
-2. Терминал 2 (Фронтенд):
-
+3. Терминал 2 (Фронтенд):
+bash
 cd frontend
 npm run dev
